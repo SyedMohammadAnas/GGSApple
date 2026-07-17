@@ -1,0 +1,514 @@
+{
+  "project": "Remote AR Assistant",
+  "version": "1.0",
+  "scope": "MVP",
+
+  "database": {
+    "provider": "Supabase (PostgreSQL)",
+    "notes": "Row-Level Security (RLS) enabled on all tables. Supabase Auth handles sessions.",
+
+    "tables": {
+      "profiles": {
+        "description": "Extends Supabase auth.users. One row per authenticated user.",
+        "columns": {
+          "id": {
+            "type": "uuid",
+            "primary_key": true,
+            "references": "auth.users(id) ON DELETE CASCADE",
+            "notes": "Matches Supabase Auth user ID"
+          },
+          "email": {
+            "type": "text",
+            "nullable": false,
+            "unique": true
+          },
+          "display_name": {
+            "type": "text",
+            "nullable": true
+          },
+          "role": {
+            "type": "text",
+            "check": "role IN ('customer', 'technician')",
+            "nullable": false,
+            "default": "customer"
+          },
+          "avatar_url": {
+            "type": "text",
+            "nullable": true,
+            "notes": "Pulled from Google OAuth profile photo"
+          },
+          "created_at": {
+            "type": "timestamptz",
+            "default": "now()",
+            "nullable": false
+          },
+          "updated_at": {
+            "type": "timestamptz",
+            "default": "now()",
+            "nullable": false
+          }
+        },
+        "rls_policies": {
+          "SELECT": "Users can read their own profile",
+          "INSERT": "Users can insert their own profile (triggered on auth.users insert)",
+          "UPDATE": "Users can update their own profile"
+        },
+        "indexes": ["id", "email"],
+        "sql": "CREATE TABLE profiles (id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE, email text NOT NULL UNIQUE, display_name text, role text NOT NULL DEFAULT 'customer' CHECK (role IN ('customer', 'technician')), avatar_url text, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now());"
+      },
+
+      "sessions": {
+        "description": "AR assistance sessions. One session = one customer + one technician + one LiveKit room.",
+        "columns": {
+          "id": {
+            "type": "uuid",
+            "primary_key": true,
+            "default": "gen_random_uuid()"
+          },
+          "join_code": {
+            "type": "text",
+            "nullable": false,
+            "unique": true,
+            "notes": "6-character alphanumeric code displayed to customer. e.g. 'ABC-123'"
+          },
+          "room_name": {
+            "type": "text",
+            "nullable": false,
+            "notes": "LiveKit room name. Equals session id for simplicity."
+          },
+          "customer_id": {
+            "type": "uuid",
+            "nullable": false,
+            "references": "profiles(id)"
+          },
+          "technician_id": {
+            "type": "uuid",
+            "nullable": true,
+            "references": "profiles(id)",
+            "notes": "Null until technician joins"
+          },
+          "status": {
+            "type": "text",
+            "check": "status IN ('waiting', 'active', 'ended')",
+            "default": "waiting",
+            "nullable": false
+          },
+          "created_at": {
+            "type": "timestamptz",
+            "default": "now()",
+            "nullable": false
+          },
+          "ended_at": {
+            "type": "timestamptz",
+            "nullable": true,
+            "notes": "Populated when session ends"
+          }
+        },
+        "rls_policies": {
+          "SELECT": "Customers can read sessions they created. Technicians can read sessions they joined. Server role can read all.",
+          "INSERT": "Customers can create sessions.",
+          "UPDATE": "Customer or technician participant can update (e.g. set status to ended). Server role can update all."
+        },
+        "indexes": ["id", "join_code", "customer_id", "technician_id", "status"],
+        "sql": "CREATE TABLE sessions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), join_code text NOT NULL UNIQUE, room_name text NOT NULL, customer_id uuid NOT NULL REFERENCES profiles(id), technician_id uuid REFERENCES profiles(id), status text NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting', 'active', 'ended')), created_at timestamptz NOT NULL DEFAULT now(), ended_at timestamptz);"
+      },
+
+      "models": {
+        "description": "Metadata for available 3D model assets. Actual GLB files are stored on local disk. MVP: 2-3 rows, managed manually.",
+        "columns": {
+          "id": {
+            "type": "text",
+            "primary_key": true,
+            "notes": "Human-readable slug e.g. 'engine_v1', 'tire_v1', 'sparkplug_v1'"
+          },
+          "name": {
+            "type": "text",
+            "nullable": false,
+            "notes": "Display name shown in model selector e.g. 'Car Engine'"
+          },
+          "url": {
+            "type": "text",
+            "nullable": false,
+            "notes": "Full URL to Draco-compressed GLB file via Cloudflare Tunnel"
+          },
+          "thumbnail_url": {
+            "type": "text",
+            "nullable": true,
+            "notes": "URL to PNG thumbnail for model selector card"
+          },
+          "file_size_bytes": {
+            "type": "bigint",
+            "nullable": false,
+            "notes": "Used for pre-load size warnings; target < 10,000,000 bytes"
+          },
+          "is_active": {
+            "type": "boolean",
+            "default": true,
+            "nullable": false,
+            "notes": "Soft toggle to hide models without deleting"
+          },
+          "created_at": {
+            "type": "timestamptz",
+            "default": "now()",
+            "nullable": false
+          }
+        },
+        "rls_policies": {
+          "SELECT": "All authenticated users can read active models.",
+          "INSERT": "Server role only (manual seeding for MVP).",
+          "UPDATE": "Server role only."
+        },
+        "indexes": ["id", "is_active"],
+        "seed_data": [
+          {
+            "id": "engine_v1",
+            "name": "Car Engine",
+            "url": "https://<tunnel>/assets/models/engine_draco.glb",
+            "thumbnail_url": "https://<tunnel>/assets/thumbnails/engine.png",
+            "file_size_bytes": 8200000,
+            "is_active": true
+          },
+          {
+            "id": "tire_v1",
+            "name": "Tyre",
+            "url": "https://<tunnel>/assets/models/tire_draco.glb",
+            "thumbnail_url": "https://<tunnel>/assets/thumbnails/tire.png",
+            "file_size_bytes": 4100000,
+            "is_active": true
+          },
+          {
+            "id": "sparkplug_v1",
+            "name": "Spark Plug",
+            "url": "https://<tunnel>/assets/models/sparkplug_draco.glb",
+            "thumbnail_url": "https://<tunnel>/assets/thumbnails/sparkplug.png",
+            "file_size_bytes": 1500000,
+            "is_active": true
+          }
+        ]
+      }
+    },
+
+    "triggers": {
+      "on_auth_user_created": {
+        "description": "Automatically creates a profiles row when a new Supabase Auth user is created via Google OAuth",
+        "sql": "CREATE OR REPLACE FUNCTION public.handle_new_user() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$ BEGIN INSERT INTO public.profiles (id, email, display_name, avatar_url) VALUES (NEW.id, NEW.email, NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'avatar_url'); RETURN NEW; END; $$; CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();"
+      }
+    }
+  },
+
+  "api_endpoints": {
+    "base_url": "https://<cloudflare-tunnel-url>",
+    "auth": "Bearer <Supabase JWT> in Authorization header on all protected routes",
+
+    "routes": {
+      "POST /api/sessions": {
+        "description": "Create a new session. Called by customer device.",
+        "auth_required": true,
+        "required_role": "customer",
+        "request_body": {},
+        "response_success": {
+          "status": 201,
+          "body": {
+            "sessionId": "uuid",
+            "roomName": "uuid",
+            "joinCode": "ABC-123",
+            "livekitToken": "eyJ...",
+            "expiresAt": "ISO-8601 timestamp"
+          }
+        },
+        "response_errors": {
+          "401": "Unauthorized — invalid or missing JWT",
+          "403": "Forbidden — user is not a customer",
+          "500": "LiveKit room creation failed"
+        },
+        "server_actions": [
+          "Validate JWT with Supabase",
+          "Generate 6-character join code (retry on collision)",
+          "Create LiveKit room via LiveKit Server API",
+          "Insert row into sessions table",
+          "Generate LiveKit token for customer (using livekit-server-sdk)",
+          "Return response"
+        ]
+      },
+
+      "POST /api/sessions/:id/join": {
+        "description": "Join an existing session. Called by technician device using join code.",
+        "auth_required": true,
+        "required_role": "technician",
+        "request_body": {
+          "joinCode": "string — 6-character code shown to customer"
+        },
+        "response_success": {
+          "status": 200,
+          "body": {
+            "sessionId": "uuid",
+            "roomName": "uuid",
+            "livekitToken": "eyJ...",
+            "customerDisplayName": "string"
+          }
+        },
+        "response_errors": {
+          "400": "Missing joinCode",
+          "401": "Unauthorized",
+          "403": "Forbidden — user is not a technician",
+          "404": "Session not found or already ended",
+          "409": "Session already has a technician"
+        },
+        "server_actions": [
+          "Validate JWT",
+          "Look up session by joinCode where status = 'waiting'",
+          "Update session: set technician_id, status = 'active'",
+          "Generate LiveKit token for technician",
+          "Return response"
+        ]
+      },
+
+      "GET /api/sessions/:id": {
+        "description": "Get session status. Used for polling or status checks.",
+        "auth_required": true,
+        "response_success": {
+          "status": 200,
+          "body": {
+            "sessionId": "uuid",
+            "status": "waiting | active | ended",
+            "customerDisplayName": "string",
+            "technicianDisplayName": "string | null",
+            "createdAt": "ISO-8601",
+            "endedAt": "ISO-8601 | null"
+          }
+        }
+      },
+
+      "PATCH /api/sessions/:id/end": {
+        "description": "End a session. Called by either participant.",
+        "auth_required": true,
+        "response_success": {
+          "status": 200,
+          "body": { "ended": true }
+        },
+        "server_actions": [
+          "Validate JWT — confirm caller is customer_id or technician_id",
+          "Update session: status = 'ended', ended_at = now()",
+          "Delete LiveKit room (optional — rooms expire anyway)"
+        ]
+      },
+
+      "GET /api/models": {
+        "description": "List all active 3D models for the asset library.",
+        "auth_required": true,
+        "response_success": {
+          "status": 200,
+          "body": {
+            "models": [
+              {
+                "id": "engine_v1",
+                "name": "Car Engine",
+                "url": "https://...",
+                "thumbnailUrl": "https://...",
+                "fileSizeBytes": 8200000
+              }
+            ]
+          }
+        }
+      },
+
+      "GET /assets/models/:filename": {
+        "description": "Serve a Draco-compressed GLB file. No auth required (URLs are not guessable).",
+        "auth_required": false,
+        "response": "Binary GLB file with Content-Type: model/gltf-binary",
+        "headers": {
+          "Cache-Control": "public, max-age=86400",
+          "Content-Encoding": "identity"
+        }
+      },
+
+      "GET /assets/thumbnails/:filename": {
+        "description": "Serve a model thumbnail image (PNG).",
+        "auth_required": false,
+        "response": "PNG image with Content-Type: image/png"
+      },
+
+      "GET /health": {
+        "description": "Server health check. No auth.",
+        "response_success": {
+          "status": 200,
+          "body": { "status": "ok", "timestamp": "ISO-8601" }
+        }
+      }
+    }
+  },
+
+  "livekit_config": {
+    "server": {
+      "image": "livekit/livekit-server:latest",
+      "config_file": "livekit.yaml",
+      "ports": {
+        "http": 7880,
+        "rtc": "7900-7999/udp"
+      }
+    },
+    "token_config": {
+      "expiry": "1h",
+      "grants": {
+        "roomJoin": true,
+        "canPublish": true,
+        "canSubscribe": true
+      }
+    },
+    "room_config": {
+      "emptyTimeout": 300,
+      "maxParticipants": 2,
+      "metadata": "{\"type\": \"ar_session\"}"
+    }
+  },
+
+  "data_channel_schemas": {
+    "envelope": {
+      "description": "All data channel messages share this envelope structure",
+      "schema": {
+        "type": "object",
+        "required": ["type", "payload", "timestamp"],
+        "properties": {
+          "type": { "type": "string", "enum": ["load_model", "place_model", "remove_model", "transform", "annotation", "annotation_sync", "clear_annotations", "session_start", "session_end", "error", "ping"] },
+          "payload": { "type": "object" },
+          "timestamp": { "type": "number", "description": "Date.now() epoch ms" },
+          "id": { "type": "string", "description": "UUID — optional, used for idempotency on Reliable channel" }
+        }
+      }
+    },
+
+    "reliable_channel_messages": {
+      "load_model": {
+        "direction": "Technician → Customer",
+        "channel": "Reliable",
+        "payload_schema": {
+          "modelId": "string — matches models.id",
+          "url": "string — full GLB download URL",
+          "name": "string — human-readable display name"
+        }
+      },
+      "place_model": {
+        "direction": "Technician → Customer",
+        "channel": "Reliable",
+        "payload_schema": {
+          "normX": "number 0–1 — normalised horizontal position on customer's screen",
+          "normY": "number 0–1 — normalised vertical position on customer's screen"
+        }
+      },
+      "remove_model": {
+        "direction": "Technician → Customer",
+        "channel": "Reliable",
+        "payload_schema": {}
+      },
+      "annotation": {
+        "direction": "Technician → Customer",
+        "channel": "Reliable",
+        "payload_schema": {
+          "id": "string UUID — unique per stroke",
+          "points": "Array<[normX: number, normY: number]> — normalised screen coordinates",
+          "color": "string hex e.g. '#00B4D8'",
+          "thickness": "number 1–5",
+          "tool": "string enum: 'freehand' | 'circle' | 'arrow'"
+        }
+      },
+      "annotation_sync": {
+        "direction": "Customer → Technician",
+        "channel": "Reliable",
+        "payload_schema": {
+          "id": "string UUID — matches the annotation id from 'annotation' message",
+          "screenPoints": "Array<[screenX: number, screenY: number]> — projected 2D coordinates for technician overlay"
+        }
+      },
+      "clear_annotations": {
+        "direction": "Either → Other",
+        "channel": "Reliable",
+        "payload_schema": {}
+      },
+      "session_start": {
+        "direction": "Either → Other",
+        "channel": "Reliable",
+        "payload_schema": {
+          "participantRole": "string: 'customer' | 'technician'",
+          "displayName": "string"
+        }
+      },
+      "session_end": {
+        "direction": "Either → Other",
+        "channel": "Reliable",
+        "payload_schema": {
+          "initiatedBy": "string: 'customer' | 'technician'"
+        }
+      },
+      "error": {
+        "direction": "Either → Other",
+        "channel": "Reliable",
+        "payload_schema": {
+          "code": "string enum: 'AR_NOT_SUPPORTED' | 'AR_SESSION_FAILED' | 'AR_TRACKING_LOST' | 'MODEL_LOAD_FAILED' | 'MODEL_PARSE_ERROR' | 'DATA_CHANNEL_LOST' | 'PERMISSION_DENIED_CAMERA' | 'PERMISSION_DENIED_MICROPHONE' | 'PLACEMENT_NO_SURFACE'",
+          "message": "string — human-readable description",
+          "severity": "string enum: 'info' | 'warning' | 'error'",
+          "details": "object | null — optional extra context"
+        }
+      }
+    },
+
+    "unreliable_channel_messages": {
+      "transform": {
+        "direction": "Technician → Customer",
+        "channel": "Unreliable (best-effort, loss-tolerant)",
+        "frequency": "Up to 60 fps via requestAnimationFrame throttling",
+        "payload_schema": {
+          "rotationX": "number — degrees, -180 to 180",
+          "rotationY": "number — degrees, -180 to 180",
+          "scale": "number — multiplier, e.g. 1.0"
+        }
+      },
+      "ping": {
+        "direction": "Either → Other",
+        "channel": "Unreliable",
+        "frequency": "Every 5 seconds as keepalive",
+        "payload_schema": {
+          "ts": "number — sender timestamp"
+        }
+      }
+    }
+  },
+
+  "file_system": {
+    "server_asset_directory": {
+      "description": "Directory structure for 3D model files on the server laptop",
+      "structure": {
+        "backend/": {
+          "assets/": {
+            "models/": {
+              "engine_draco.glb": "Draco-compressed car engine model",
+              "tire_draco.glb": "Draco-compressed tyre model",
+              "sparkplug_draco.glb": "Draco-compressed spark plug model"
+            },
+            "thumbnails/": {
+              "engine.png": "128×128 px PNG thumbnail",
+              "tire.png": "128×128 px PNG thumbnail",
+              "sparkplug.png": "128×128 px PNG thumbnail"
+            }
+          }
+        }
+      }
+    }
+  },
+
+  "environment_variables": {
+    "client_app": {
+      "EXPO_PUBLIC_SUPABASE_URL": "https://xxxx.supabase.co",
+      "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJ...",
+      "EXPO_PUBLIC_NODE_SERVER_URL": "https://<tunnel>.trycloudflare.com",
+      "EXPO_PUBLIC_LIVEKIT_URL": "wss://<tunnel>.trycloudflare.com"
+    },
+    "server": {
+      "SUPABASE_URL": "https://xxxx.supabase.co",
+      "SUPABASE_SERVICE_ROLE_KEY": "eyJ... (never expose to client)",
+      "LIVEKIT_API_KEY": "API...",
+      "LIVEKIT_API_SECRET": "secret...",
+      "LIVEKIT_URL": "http://localhost:7880",
+      "PORT": "3000"
+    }
+  }
+}

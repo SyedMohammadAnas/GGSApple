@@ -1,0 +1,25 @@
+services:
+  livekit:
+    image: livekit/livekit-server:latest
+    ports:
+      - '7880:7880'
+      - '7881:7881'
+      - '3478:3478/udp'
+      - '3478:3478/tcp'
+      - '7900-7999:7900-7999/udp'
+    volumes:
+      - ./livekit.yaml:/livekit.yaml
+    command: --config /livekit.yaml
+    restart: unless-stopped
+
+  api:
+    build: ./backend
+    ports:
+      - '3000:3000'
+    volumes:
+      # Assets only — do not mount ./backend:/app (overwrites image dist/ and breaks startup)
+      - ./backend/assets:/app/assets
+    env_file: .env
+    depends_on:
+      - livekit
+    restart: unless-stopped

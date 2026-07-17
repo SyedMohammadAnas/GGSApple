@@ -1,0 +1,36 @@
+# Secrets / env
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.local
+**/local.properties
+
+# Dependencies / build
+**/node_modules/
+**/dist/
+**/build/
+**/.next/
+**/.turbo/
+**/*.exe
+**/.gradle/
+**/android-app/**/build/
+**/captures/
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Asset dashboard is its OWN GitHub repo + Vercel project:
+# https://github.com/SyedMohammadAnas/cgs-asset-dashboard
+# Keep the folder on disk for convenience, but do not track it here.
+asset-dashboard/
+
+# Large / local-only
+**/assets/models/**
+!**/assets/models/manifest.json
+backend/node_modules/
+*.log
