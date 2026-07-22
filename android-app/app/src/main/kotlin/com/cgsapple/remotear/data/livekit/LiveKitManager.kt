@@ -127,11 +127,17 @@ class LiveKitManager @Inject constructor(
     }
 
     fun toggleMute() {
-        val liveKitRoom = room ?: return
+        val liveKitRoom = room
+        if (liveKitRoom == null) {
+            Log.w(TAG, "toggleMute() skipped — room is null")
+            return
+        }
         scope.launch {
             val muted = !_isMuted.value
+            Log.i(TAG, "toggleMute() applying muted=$muted (micEnabled=${!muted})")
             liveKitRoom.localParticipant.setMicrophoneEnabled(!muted)
             _isMuted.value = muted
+            Log.i(TAG, "toggleMute() done isMuted=${_isMuted.value}")
         }
     }
 

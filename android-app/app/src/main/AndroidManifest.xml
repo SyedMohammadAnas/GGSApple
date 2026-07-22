@@ -13,6 +13,9 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <!-- Required for SENSOR_DELAY_FASTEST on Android 12+; also unblocks Samsung One UI 8 /
+         ARCore 1.54 Session.resume FatalException (github.com/google-ar/arcore-android-sdk/issues/1762). -->
+    <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
 
     <uses-feature
         android:name="android.hardware.camera.ar"

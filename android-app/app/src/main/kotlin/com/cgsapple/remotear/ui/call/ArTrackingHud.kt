@@ -58,6 +58,7 @@ fun ArTrackingStateBar(
     val message = trackingState.barMessage() ?: return
 
     val textColor = when (trackingState) {
+        ArTrackingUiState.INSTALLING -> TertiaryWarning
         ArTrackingUiState.SCANNING -> PrimaryCyan
         ArTrackingUiState.SURFACE_FOUND -> SecondaryGreen
         ArTrackingUiState.TRACKING_LOST -> TertiaryWarning

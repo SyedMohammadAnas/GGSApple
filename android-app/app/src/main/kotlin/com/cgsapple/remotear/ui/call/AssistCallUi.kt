@@ -1,5 +1,6 @@
 package com.cgsapple.remotear.ui.call
 
+import android.util.Log
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -292,8 +293,8 @@ fun AnnotationSidebar(
         tools.forEach { (tool, icon) ->
             val enabled = when (tool) {
                 SidebarTool.POINTER, SidebarTool.DRAW, SidebarTool.ARROW, SidebarTool.CIRCLE -> drawingEnabled
-                SidebarTool.UNDO -> true
-                SidebarTool.DELETE -> drawingEnabled
+                // Undo/clear must stay tappable even while AR is still scanning.
+                SidebarTool.UNDO, SidebarTool.DELETE -> true
                 else -> true
             }
             val selected = when (tool) {
@@ -310,7 +311,10 @@ fun AnnotationSidebar(
                             else -> Color.Transparent
                         },
                     )
-                    .clickable(enabled = enabled) { onToolSelected(tool) },
+                    .clickable(enabled = enabled) {
+                        Log.i(TAG, "AnnotationSidebar tap tool=$tool enabled=$enabled")
+                        onToolSelected(tool)
+                    },
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
@@ -532,7 +536,10 @@ private fun CallControlButton(
                 .size(52.dp)
                 .clip(CircleShape)
                 .background(background)
-                .clickable(enabled = !loading, onClick = onClick),
+                .clickable(enabled = !loading) {
+                    Log.i(TAG, "CallControlButton tap label=$label loading=$loading")
+                    onClick()
+                },
             contentAlignment = Alignment.Center,
         ) {
             if (loading) {
@@ -722,3 +729,5 @@ fun ModelDetailSheet(
         }
     }
 }
+
+private const val TAG = "AssistCallUi"

@@ -175,6 +175,19 @@ fun CustomerCallScreen(
         }
 
         ArScanRingOverlay(visible = uiState.arActive && !uiState.arFallbackActive && uiState.planeCount == 0)
+        // Drawing gestures ABOVE AR surface but BELOW chrome - zIndex(9) previously ate mute/end/undo taps.
+        if (drawToolActive) {
+            DrawingTouchLayer(
+                enabled = drawingEnabled,
+                activeTool = activeTool,
+                activeColor = activeColor,
+                onViewSizeChanged = onViewSizeChanged,
+                onDraftChanged = onDraftChanged,
+                onStrokeStreaming = onStrokeStreaming,
+                onStrokeCommitted = onStrokeCommitted,
+                modifier = Modifier.fillMaxSize().zIndex(5f),
+            )
+        }
 
         AssistCallChrome(
             uiState = uiState,
@@ -210,34 +223,21 @@ fun CustomerCallScreen(
             onStopRecording = onStopRecording,
         )
 
-        if (drawToolActive) {
-            DrawingTouchLayer(
-                enabled = drawingEnabled,
-                activeTool = activeTool,
-                activeColor = activeColor,
-                onViewSizeChanged = onViewSizeChanged,
-                onDraftChanged = onDraftChanged,
-                onStrokeStreaming = onStrokeStreaming,
-                onStrokeCommitted = onStrokeCommitted,
-                modifier = Modifier.fillMaxSize().zIndex(9f),
-            )
-        }
-
         if (!uiState.liveKitStarted && uiState.permissionsGranted) {
             Box(
-                Modifier.fillMaxSize().background(Background.copy(alpha = 0.4f)),
+                Modifier.fillMaxSize().background(Background.copy(alpha = 0.4f)).zIndex(15f),
                 contentAlignment = Alignment.Center,
             ) {
-                CircularProgressIndicator(Modifier.size(40.dp), strokeWidth = 3.dp)
+                CircularProgressIndicator(modifier.size(40.dp), strokeWidth = 3.dp)
             }
         }
 
-        SnackbarHost(hostState = snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
+        SnackbarHost(hostState = snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter).zIndex(25f))
 
         uiState.errorMessage?.let { msg ->
             Text(
                 text = msg,
-                modifier = Modifier.align(Alignment.Center).padding(horizontal = 24.dp),
+                modifier = Modifier.align(Alignment.Center).padding(horizontal = 24.dp).zIndex(25f),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.error,
                 textAlign = TextAlign.Center,
@@ -374,9 +374,14 @@ fun TechnicianCallScreen(
             onStopRecording = onStopRecording,
         )
 
+        // Constrain draw/pointer hit-testing to the 9:16 video frame only (not full screen),
+        // and keep zIndex below AssistCallChrome so mute/end/sidebar remain tappable.
         if (hasVideo) {
-            Box(Modifier.fillMaxSize().zIndex(9f), contentAlignment = Alignment.Center) {
-                Box(Modifier.fillMaxHeight().aspectRatio(HOST_VIDEO_ASPECT)) {
+            Box(
+                modifier = Modifier.fillMaxSize().zIndex(5f),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(modifier = Modifier.fillMaxHeight().aspectRatio(HOST_VIDEO_ASPECT)) {
                     if (drawToolActive) {
                         DrawingTouchLayer(
                             enabled = drawingEnabled,
@@ -401,12 +406,12 @@ fun TechnicianCallScreen(
             }
         }
 
-        SnackbarHost(hostState = snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
+        SnackbarHost(hostState = snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter).zIndex(25f))
 
         uiState.errorMessage?.let { msg ->
             Text(
                 text = msg,
-                modifier = Modifier.align(Alignment.Center).padding(horizontal = 24.dp),
+                modifier = Modifier.align(Alignment.Center).padding(horizontal = 24.dp).zIndex(25f),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.error,
                 textAlign = TextAlign.Center,
@@ -480,7 +485,7 @@ private fun AssistCallChrome(
     onPlaceModel: () -> Unit,
     sessionLabel: String = "Session #${uiState.joinCode.takeLast(3)}",
 ) {
-    Box(Modifier.fillMaxSize().zIndex(6f)) {
+    Box(Modifier.fillMaxSize().zIndex(20f)) {
         Column(Modifier.fillMaxWidth()) {
             if (uiState.connectionStatus == CallConnectionStatus.RECONNECTING) ReconnectingBanner()
             if (uiState.arFallbackActive) ArFallbackBanner()

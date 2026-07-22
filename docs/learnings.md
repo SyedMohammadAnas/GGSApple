@@ -4,6 +4,39 @@ Notes from debugging sessions, fixes, and infrastructure setup. Add new entries 
 
 ---
 
+## Native Android — new Samsung phones (2026-07-21 / landed 2026-07-22)
+
+Verified on Samsung A35 (SM-A356E) + S24 FE (SM-S721B), both Android 16. Vault: SergantSwaggBase `Progress/CGSApple-New-Phones-AR-Fixes-2026-07-22` + pitfalls under `Projects/CGSApple/`.
+
+### ARCore `INSTALL_REQUESTED` must wait, not fall back
+
+- **Symptom:** Play Store opens for Play Services for AR; after return, app stays in permanent CameraX / non-AR mode.
+- **Cause:** Treating `InstallStatus.INSTALL_REQUESTED` like unsupported.
+- **Fix:** Official sample pattern — `userRequestedInstall` flag, `awaitingArInstall`, UI `ArTrackingUiState.INSTALLING`, retry `openCamera()` on resume.
+
+### Samsung Android 16 + ARCore 1.54 `Session.resume` FatalException
+
+- **Upstream:** [arcore-android-sdk#1762](https://github.com/google-ar/arcore-android-sdk/issues/1762).
+- **Fix:** Keep uncalibrated gyro + accel streaming at `SENSOR_DELAY_FASTEST` before create/resume; manifest `HIGH_SAMPLING_RATE_SENSORS`; prefer `TEMPLATE_PREVIEW`; ARCore `1.48.0+`; `jniLibs.useLegacyPackaging = true` for 16 KB page installs.
+
+### Concurrent Camera2 open → permanent fallback
+
+- **Symptom:** `CameraDevice was already closed` then CameraX fallback.
+- **Cause:** Multiple `openCamera()` callers racing; `onClosed` missing so teardown `ConditionVariable` stalled 3s into the next open.
+- **Fix:** Generation + in-flight guards, soft retry, implement `onClosed`.
+
+### Call chrome taps stolen by draw layer
+
+- **Symptom:** Mute / end / undo / clear dead while drawing still works.
+- **Cause:** `DrawingTouchLayer` at `zIndex(9)` above chrome at `6`.
+- **Fix:** Draw/pointer `zIndex(5)`, chrome `20`, snackbar/errors `25`; keep UNDO/DELETE always enabled.
+
+### Backend Docker without `public/`
+
+- **Fix:** `RUN mkdir -p public` instead of `COPY public` in `backend/Dockerfile`.
+
+---
+
 ## LiveKit & WebRTC
 
 ### Session signaling vs media are separate paths

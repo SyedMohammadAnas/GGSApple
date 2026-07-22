@@ -331,11 +331,20 @@ class CallViewModel @Inject constructor(
         )
     }
 
-    fun toggleMute() = liveKitManager.toggleMute()
+    fun toggleMute() {
+        Log.i(TAG, "toggleMute() requested isMuted=${_uiState.value.isMuted}")
+        liveKitManager.toggleMute()
+    }
 
-    fun toggleSpeaker() = audioOutputManager.toggleSpeakerphone()
+    fun toggleSpeaker() {
+        Log.i(TAG, "toggleSpeaker() requested isSpeakerOn=${_uiState.value.isSpeakerOn}")
+        audioOutputManager.toggleSpeakerphone()
+    }
 
-    fun toggleVideoPaused() = liveKitManager.toggleVideoPaused()
+    fun toggleVideoPaused() {
+        Log.i(TAG, "toggleVideoPaused() requested isVideoPaused=${_uiState.value.isVideoPaused}")
+        liveKitManager.toggleVideoPaused()
+    }
 
     fun toggleBottomSheetExpanded() {
         _uiState.update { it.copy(bottomSheetExpanded = !it.bottomSheetExpanded) }
@@ -418,6 +427,7 @@ class CallViewModel @Inject constructor(
     }
 
     fun setSidebarTool(tool: SidebarTool) {
+        Log.i(TAG, "setSidebarTool($tool) current=${_uiState.value.sidebarTool}")
         when (tool) {
             SidebarTool.UNDO -> {
                 undoLastStroke()
@@ -435,6 +445,7 @@ class CallViewModel @Inject constructor(
 
     fun undoLastStroke() {
         val hadStroke = annotationController.hasUndoableStroke()
+        Log.i(TAG, "undoLastStroke() hadStroke=$hadStroke")
         annotationController.undoLastStroke()
         if (!hadStroke) {
             showToast("Nothing to undo")
@@ -528,20 +539,26 @@ class CallViewModel @Inject constructor(
     }
 
     fun endSession() {
-        if (_uiState.value.isEnding) return
+        if (_uiState.value.isEnding) {
+            Log.w(TAG, "endSession() ignored — already ending")
+            return
+        }
 
+        Log.i(TAG, "endSession() sessionId=$sessionId isCustomer=$isCustomer")
         viewModelScope.launch {
             _uiState.update { it.copy(isEnding = true, errorMessage = null) }
             screenRecordingManager.reset()
             disconnectLiveKit()
             sessionRepository.endSession(sessionId)
                 .onSuccess {
+                    Log.i(TAG, "endSession() success — navigating to session ended")
                     sessionRepository.clearCachedSession()
                     _uiState.update {
                         it.copy(isEnding = false, navigateToSessionEnded = true)
                     }
                 }
                 .onFailure { error ->
+                    Log.e(TAG, "endSession() failed: ${error.message}", error)
                     _uiState.update {
                         it.copy(
                             isEnding = false,
@@ -585,6 +602,7 @@ class CallViewModel @Inject constructor(
     }
 
     fun clearAnnotations() {
+        Log.i(TAG, "clearAnnotations() requested")
         annotationController.clearAll()
     }
 

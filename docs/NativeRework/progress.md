@@ -4,7 +4,24 @@
 > Specs and phase checklists remain in `implementation-plan.md`, `trd.md`, and `cursor-prompt.md`.  
 > This file tracks **what we actually built and verified on device**.
 
-**Last updated:** 2026-07-08 — **Phase 9: annotation/undo fixes, Vercel dashboard, black chrome**
+**Last updated:** 2026-07-22 — **New-phone AR + call-chrome fixes landed on main**
+
+---
+
+## New phones — ARCore + call chrome (2026-07-21 verified, 2026-07-22 committed) ✅
+
+| Item | Status |
+|------|--------|
+| ARCore install wait (`INSTALLING`) + resume retry | Done |
+| Samsung Android 16 IMU keep-alive (#1762) + `HIGH_SAMPLING_RATE_SENSORS` | Done |
+| Camera2 open race (generation / inFlight / onClosed / soft retry) | Done |
+| Prefer `TEMPLATE_PREVIEW`; ARCore 1.48.0; legacy JNI packaging | Done |
+| Draw layer under chrome (zIndex 5 / 20 / 25); UNDO/DELETE always on | Done |
+| Control-path instrumentation (AssistCallUi / CallViewModel / LiveKit) | Done |
+| Backend Dockerfile: `mkdir -p public` | Done |
+| Device verify A35 customer + S24 FE expert | Done |
+
+Vault: SergantSwaggBase `Progress/CGSApple-New-Phones-AR-Fixes-2026-07-22`.
 
 ---
 

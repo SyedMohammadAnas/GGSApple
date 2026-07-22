@@ -82,12 +82,18 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        // Compress .so files so 16 KB page-size ELF zip-alignment warnings/failures
+        // from third-party ARCore/Filament/LiveKit natives do not block debug installs
+        // on Android 15/16 devices that advertise 16 KB page support.
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
 }
 
 dependencies {
-    // ARCore
-    implementation("com.google.ar:core:1.44.0")
+    // ARCore (keep reasonably current for OEM + 16 KB packaging fixes)
+    implementation("com.google.ar:core:1.48.0")
 
     // SceneView (ARCore + Filament rendering)
     implementation("io.github.sceneview:arsceneview:2.2.1")
