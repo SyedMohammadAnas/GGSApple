@@ -40,9 +40,9 @@ final class HomeViewModel {
     }
 
     /// Customer: wait until expert creates/activates a session for this user.
-    private func startCustomerWatcherIfNeeded() {
+    func startCustomerWatcherIfNeeded() {
         pollTask?.cancel()
-        guard mode == .customer, !accessToken.isEmpty else { return }
+        guard mode == .customer, !accessToken.isEmpty, activeCall == nil else { return }
 
         pollTask = Task { [weak self] in
             while !Task.isCancelled {

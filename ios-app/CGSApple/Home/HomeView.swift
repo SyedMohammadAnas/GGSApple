@@ -1,10 +1,13 @@
 import SwiftUI
 
-/// AR Assist home — Customer / Expert toggle matching mockups.
+/// AR Assist home — single non-scrolling viewport matching mockups.
 struct HomeView: View {
     @Bindable var authViewModel: AuthViewModel
     let profile: Profile?
     @State private var home = HomeViewModel()
+    @State private var idJustCopied = false
+
+    private let customerBlue = Color(red: 0.20, green: 0.48, blue: 1.0)
 
     var body: some View {
         ZStack {
@@ -12,16 +15,20 @@ struct HomeView: View {
 
             VStack(spacing: 0) {
                 topBar
-                ScrollView {
-                    VStack(spacing: 20) {
-                        hero
-                        modeBody
-                        tutorialButton
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 8)
-                    .padding(.bottom, 24)
+
+                VStack(spacing: 14) {
+                    hero
+                        .frame(maxHeight: .infinity)
+
+                    modeBody
+
+                    tutorialButton
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, 4)
+                .padding(.bottom, 8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
                 statusBar
             }
 
@@ -36,8 +43,15 @@ struct HomeView: View {
             }
         }
         .onDisappear { home.stopWatchers() }
+        .onChange(of: home.showSoloAR) { _, open in
+            if open {
+                home.stopWatchers()
+            } else {
+                home.startCustomerWatcherIfNeeded()
+            }
+        }
         .fullScreenCover(isPresented: $home.showSoloAR) {
-            SoloARView()
+            OfflineAssistSessionView()
         }
         .fullScreenCover(item: Binding(
             get: { home.activeCall.map(CallRoute.init) },
@@ -72,19 +86,13 @@ struct HomeView: View {
 
             Spacer()
 
-            Toggle("", isOn: Binding(
-                get: { home.mode == .expert },
-                set: { home.setMode($0 ? .expert : .customer) }
-            ))
-            .labelsHidden()
-            .tint(AppTheme.orange)
-            .accessibilityLabel("Expert mode")
+            modeToggle
 
             Menu {
                 Button("Debug backend URL") { home.showDebugSheet = true }
                 Button("Clear cache") { home.clearCachePreservingAuth() }
                 Divider()
-                Button("Copy my ID") { home.copyPublicId(profile) }
+                Button("Copy my ID") { copyIdWithTick() }
                 Button("Sign out", role: .destructive) {
                     home.stopWatchers()
                     Task { await authViewModel.signOut() }
@@ -102,18 +110,35 @@ struct HomeView: View {
         .padding(.vertical, 10)
     }
 
-    // MARK: - Hero
+    /// Customer = blue track; Expert = orange track.
+    private var modeToggle: some View {
+        Button {
+            home.setMode(home.mode == .customer ? .expert : .customer)
+        } label: {
+            ZStack(alignment: home.mode == .expert ? .trailing : .leading) {
+                Capsule()
+                    .fill(home.mode == .expert ? AppTheme.orange : customerBlue)
+                    .frame(width: 52, height: 32)
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: 26, height: 26)
+                    .padding(3)
+                    .shadow(color: .black.opacity(0.2), radius: 1, y: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(home.mode == .expert ? "Expert mode" : "Customer mode")
+        .animation(.easeInOut(duration: 0.18), value: home.mode)
+    }
+
+    // MARK: - Hero (no border)
 
     private var hero: some View {
         Image("AppPreview")
             .resizable()
             .scaledToFit()
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color.cyan.opacity(0.55), lineWidth: 2)
-            )
     }
 
     // MARK: - Mode body
@@ -126,20 +151,22 @@ struct HomeView: View {
             expertBlock
         }
 
-        if !home.statusMessage.isEmpty {
+        if !home.statusMessage.isEmpty && !home.statusMessage.hasPrefix("ID copied") {
             Text(home.statusMessage)
                 .font(.footnote)
                 .foregroundStyle(AppTheme.orange)
                 .multilineTextAlignment(.center)
+                .lineLimit(2)
         }
     }
 
     private var customerBlock: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 12) {
             Text("Share your ID to receive quick remote support")
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
 
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
@@ -152,11 +179,13 @@ struct HomeView: View {
                 }
                 Spacer()
                 Button {
-                    home.copyPublicId(profile)
+                    copyIdWithTick()
                 } label: {
-                    Image(systemName: "doc.on.doc")
-                        .foregroundStyle(.white.opacity(0.7))
+                    Image(systemName: idJustCopied ? "checkmark.circle.fill" : "doc.on.doc")
+                        .font(.title3)
+                        .foregroundStyle(idJustCopied ? AppTheme.orange : .white.opacity(0.7))
                         .padding(10)
+                        .contentTransition(.symbolEffect(.replace))
                 }
             }
             .padding(14)
@@ -172,17 +201,18 @@ struct HomeView: View {
                     .padding(.vertical, 16)
                     .background(AppTheme.orange)
                     .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .clipShape(Capsule())
             }
         }
     }
 
     private var expertBlock: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 12) {
             Text("Enter customer ID to provide quick remote support")
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
 
             HStack {
                 TextField("Enter the ID", text: $home.expertIDInput)
@@ -210,7 +240,7 @@ struct HomeView: View {
                     .padding(.vertical, 16)
                     .background(AppTheme.orange)
                     .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .clipShape(Capsule())
             }
             .disabled(home.isBusy)
         }
@@ -226,7 +256,7 @@ struct HomeView: View {
                 .padding(.vertical, 14)
                 .foregroundStyle(.white)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    Capsule()
                         .stroke(Color.white.opacity(0.55), lineWidth: 1.5)
                 )
         }
@@ -240,6 +270,7 @@ struct HomeView: View {
             Text("Ready to connect (connection is secure)")
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.55))
+                .lineLimit(1)
             Spacer()
             Image(systemName: "wifi")
                 .foregroundStyle(AppTheme.statusGreen)
@@ -268,6 +299,21 @@ struct HomeView: View {
             .padding(28)
             .background(AppTheme.panel)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        }
+    }
+
+    private func copyIdWithTick() {
+        home.copyPublicId(profile)
+        // Suppress text toast — orange tick only.
+        home.statusMessage = ""
+        withAnimation {
+            idJustCopied = true
+        }
+        Task {
+            try? await Task.sleep(nanoseconds: 1_600_000_000)
+            withAnimation {
+                idJustCopied = false
+            }
         }
     }
 }
