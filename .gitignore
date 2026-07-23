@@ -24,6 +24,15 @@
 .DS_Store
 Thumbs.db
 
+# iOS / Xcode
+**/xcuserdata/
+**/*.xcuserstate
+**/DerivedData/
+ios-app/.swiftpm/
+ios-app/**/Package.resolved
+# Keep Package.resolved if present at project level for reproducible SPM — allowlist below
+!ios-app/CGSApple.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+
 # Asset dashboard is its OWN GitHub repo + Vercel project:
 # https://github.com/SyedMohammadAnas/cgs-asset-dashboard
 # Keep the folder on disk for convenience, but do not track it here.

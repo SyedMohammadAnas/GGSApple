@@ -4,12 +4,12 @@ rtc:
   port_range_start: 7900
   port_range_end: 7999
   use_external_ip: false
-  # Host LAN IP — update if your Wi-Fi address changes (ipconfig).
-  node_ip: 192.168.0.102
+  # iMac Lab Tailscale — phones reach Docker via Tailscale mesh.
+  node_ip: 100.83.95.8
 
 turn:
   enabled: true
-  domain: 192.168.0.102
+  domain: 100.83.95.8
   udp_port: 3478
   external_tls: false
 

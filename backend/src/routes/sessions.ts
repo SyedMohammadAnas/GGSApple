@@ -108,7 +108,12 @@ router.post('/join-by-id', requireAuth, async (req, res) => {
     return;
   }
 
-  if (!session) {
+  // New flow (2026-07-23): Expert join-by-ID creates the session if the
+  // customer has none waiting. Customer stays on home until Realtime sees
+  // status=active, then calls POST /customer-enter for their LiveKit token.
+  let sessionToJoin = session;
+
+  if (!sessionToJoin) {
     const { data: activeSession } = await supabaseAdmin
       .from('sessions')
       .select('id, status')
@@ -121,19 +126,73 @@ router.post('/join-by-id', requireAuth, async (req, res) => {
       return;
     }
 
-    res.status(404).json({
-      error: 'No waiting session for this customer. Ask them to open the app on their device.',
-    });
-    return;
+    const joinCode = generateJoinCode();
+    const roomName = crypto.randomUUID();
+
+    const { data: created, error: createError } = await supabaseAdmin
+      .from('sessions')
+      .insert({
+        join_code: joinCode,
+        room_name: roomName,
+        customer_id: customerProfile.id,
+        status: 'waiting',
+      })
+      .select('id, join_code, room_name, customer_id, technician_id, status')
+      .single();
+
+    if (createError || !created) {
+      res.status(500).json({ error: 'Failed to create session for customer' });
+      return;
+    }
+
+    sessionToJoin = created;
   }
 
   await joinSessionAsTechnician(
-    session,
+    sessionToJoin,
     user.id,
     profile.display_name ?? profile.email,
     profile.email,
     res,
   );
+});
+
+/** Customer claims LiveKit token for their active session (after expert joins). */
+router.post('/customer-enter', requireAuth, async (req, res) => {
+  const { user, profile } = req as AuthedRequest;
+
+  const { data: session, error } = await supabaseAdmin
+    .from('sessions')
+    .select('id, join_code, room_name, customer_id, technician_id, status')
+    .eq('customer_id', user.id)
+    .eq('status', 'active')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    res.status(500).json({ error: 'Failed to look up session' });
+    return;
+  }
+
+  if (!session) {
+    res.status(404).json({ error: 'No active session. Wait for an expert to join your ID.' });
+    return;
+  }
+
+  const token = await createLiveKitToken({
+    roomName: session.room_name,
+    identity: user.id,
+    name: profile.display_name ?? profile.email,
+  });
+
+  res.json({
+    sessionId: session.id,
+    roomName: session.room_name,
+    joinCode: session.join_code,
+    status: session.status,
+    token,
+  });
 });
 
 router.post('/', requireAuth, async (req, res) => {
