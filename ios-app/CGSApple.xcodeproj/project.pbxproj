@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		7CCB41F0746456B6BFCE1938 /* GlassStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DE77DDF995D54B7852F9ACE /* GlassStyle.swift */; };
 		211C3A86A19D529BBFB7B581 /* OfflineAssistSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D896A509F8FE58B991D36D61 /* OfflineAssistSessionView.swift */; };
 		021B0A0279755D5F923397F5 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEBCC53CFF445D9095F98AA5 /* RootView.swift */; };
 		05FF97DC5CB2505C9417D33C /* CallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE22F17B21645213A63A4997 /* CallView.swift */; };
@@ -29,6 +30,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		4DE77DDF995D54B7852F9ACE /* GlassStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassStyle.swift; sourceTree = "<group>"; };
 		D896A509F8FE58B991D36D61 /* OfflineAssistSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineAssistSessionView.swift; sourceTree = "<group>"; };
 		135208A55E5457919B250BCD /* GoogleOAuth.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = GoogleOAuth.plist; sourceTree = "<group>"; };
 		3F6DF81A49935117A7E6CFF9 /* SessionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionService.swift; sourceTree = "<group>"; };
@@ -144,6 +146,7 @@
 			children = (
 				D2A18DDADD905FBEB5AAD451 /* AppConfig.swift */,
 				9F1C617D239C5217A5C608C5 /* AppTheme.swift */,
+				4DE77DDF995D54B7852F9ACE /* GlassStyle.swift */,
 				135208A55E5457919B250BCD /* GoogleOAuth.plist */,
 			);
 			path = Config;
@@ -250,6 +253,7 @@
 				7C75B4325FCC59A19D2CC84B /* LiveKitManager.swift in Sources */,
 				24D007C8E14A53B7A6688CF7 /* AppConfig.swift in Sources */,
 				FA3D891BC4325D08B320B53B /* AppTheme.swift in Sources */,
+				7CCB41F0746456B6BFCE1938 /* GlassStyle.swift in Sources */,
 				EB17391064CF54EDACCE0872 /* HomeView.swift in Sources */,
 				F538B5ECBAB95506A693C758 /* HomeViewModel.swift in Sources */,
 				C3B5E373D7925C3BB8BD138D /* SessionService.swift in Sources */,

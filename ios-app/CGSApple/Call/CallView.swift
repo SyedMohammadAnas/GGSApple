@@ -14,7 +14,6 @@ struct CallView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-
             videoLayer
 
             VStack {
@@ -36,8 +35,7 @@ struct CallView: View {
                     .font(.footnote)
                     .foregroundStyle(.orange)
                     .padding()
-                    .background(.black.opacity(0.7))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .assistGlassRounded(12)
             }
         }
         .preferredColorScheme(.dark)
@@ -84,106 +82,99 @@ struct CallView: View {
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.bold))
                 }
-                .foregroundStyle(.white)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(.black.opacity(0.45))
-                .clipShape(Capsule())
             }
+            .assistGlassCapsule()
+
             Spacer()
+
             Button { showAssets = true } label: {
                 Image(systemName: "circle.grid.2x2")
-                    .foregroundStyle(.black)
-                    .padding(10)
-                    .background(.white.opacity(0.85))
-                    .clipShape(Circle())
+                    .font(.body.weight(.semibold))
+                    .frame(width: 40, height: 40)
             }
+            .assistGlassCircle()
         }
     }
 
     private var annotationToolbar: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 10) {
             ForEach(AnnotationTool.allCases) { tool in
                 Button { selectedTool = tool } label: {
                     Image(systemName: tool.systemImage)
                         .font(.body.weight(.semibold))
-                        .foregroundStyle(.white)
                         .frame(width: 40, height: 40)
-                        .background(selectedTool == tool ? Color.white.opacity(0.28) : Color.clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .foregroundStyle(selectedTool == tool ? AppTheme.orange : .primary)
                 }
+                .assistGlassRounded(12, tint: selectedTool == tool ? AppTheme.orange.opacity(0.35) : nil)
             }
         }
         .padding(8)
-        .background(.black.opacity(0.45))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .assistGlassRounded(18)
     }
 
     private var bottomChrome: some View {
         VStack(spacing: 10) {
             Capsule()
-                .fill(Color.white.opacity(0.25))
+                .fill(Color.primary.opacity(0.25))
                 .frame(width: 36, height: 4)
 
-            HStack(spacing: 22) {
-                callButton(
+            HStack(spacing: 18) {
+                glassCallButton(
                     title: "speaker",
-                    system: liveKit.isSpeakerOn ? "speaker.wave.2.fill" : "speaker.slash.fill",
-                    active: liveKit.isSpeakerOn
+                    system: liveKit.isSpeakerOn ? "speaker.wave.2.fill" : "speaker.slash.fill"
                 ) { liveKit.toggleSpeaker() }
 
-                callButton(
+                glassCallButton(
                     title: "mute",
-                    system: liveKit.isMuted ? "mic.slash.fill" : "mic.fill",
-                    active: !liveKit.isMuted
+                    system: liveKit.isMuted ? "mic.slash.fill" : "mic.fill"
                 ) { liveKit.toggleMute() }
 
-                callButton(
+                glassCallButton(
                     title: liveKit.isVideoPaused ? "resume" : "pause",
-                    system: liveKit.isVideoPaused ? "play.fill" : "pause.fill",
-                    active: !liveKit.isVideoPaused
+                    system: liveKit.isVideoPaused ? "play.fill" : "pause.fill"
                 ) { liveKit.toggleVideoPaused() }
 
-                Button {
-                    Task {
-                        await liveKit.disconnect()
-                        onEnd()
-                    }
-                } label: {
-                    VStack(spacing: 4) {
+                VStack(spacing: 4) {
+                    Button {
+                        Task {
+                            await liveKit.disconnect()
+                            onEnd()
+                        }
+                    } label: {
                         Image(systemName: "xmark")
                             .font(.title3.weight(.bold))
                             .foregroundStyle(.white)
                             .frame(width: 56, height: 56)
-                            .background(Color.red)
-                            .clipShape(Circle())
-                        Text("end")
-                            .font(.caption2)
-                            .foregroundStyle(.white.opacity(0.7))
                     }
+                    .assistGlassCircle(tint: .red)
+
+                    Text("end")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.75))
                 }
             }
         }
-        .padding(.top, 10)
-        .padding(.bottom, 8)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
+        .padding(.horizontal, 16)
         .frame(maxWidth: .infinity)
-        .background(.black.opacity(0.55))
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .assistGlassRounded(22)
     }
 
-    private func callButton(title: String, system: String, active: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 4) {
+    private func glassCallButton(title: String, system: String, action: @escaping () -> Void) -> some View {
+        VStack(spacing: 4) {
+            Button(action: action) {
                 Image(systemName: system)
                     .font(.title3)
-                    .foregroundStyle(.white)
                     .frame(width: 56, height: 56)
-                    .background(Color.white.opacity(active ? 0.22 : 0.12))
-                    .clipShape(Circle())
-                Text(title)
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.7))
             }
+            .assistGlassCircle()
+
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.75))
         }
     }
 

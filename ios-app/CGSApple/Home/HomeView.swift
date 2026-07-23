@@ -7,8 +7,6 @@ struct HomeView: View {
     @State private var home = HomeViewModel()
     @State private var idJustCopied = false
 
-    private let customerBlue = Color(red: 0.20, green: 0.48, blue: 1.0)
-
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -100,35 +98,24 @@ struct HomeView: View {
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.body.weight(.bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .frame(width: 36, height: 36)
-                    .background(Color.white.opacity(0.1))
-                    .clipShape(Circle())
             }
+            .modifier(MenuGlassModifier())
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
     }
 
-    /// Customer = blue track; Expert = orange track.
+    /// System Toggle (Liquid Glass on iOS 26) — blue for Customer, orange for Expert.
     private var modeToggle: some View {
-        Button {
-            home.setMode(home.mode == .customer ? .expert : .customer)
-        } label: {
-            ZStack(alignment: home.mode == .expert ? .trailing : .leading) {
-                Capsule()
-                    .fill(home.mode == .expert ? AppTheme.orange : customerBlue)
-                    .frame(width: 52, height: 32)
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: 26, height: 26)
-                    .padding(3)
-                    .shadow(color: .black.opacity(0.2), radius: 1, y: 1)
-            }
-        }
-        .buttonStyle(.plain)
+        Toggle("", isOn: Binding(
+            get: { home.mode == .expert },
+            set: { home.setMode($0 ? .expert : .customer) }
+        ))
+        .labelsHidden()
+        .tint(home.mode == .expert ? AppTheme.orange : AppChrome.customerBlue)
         .accessibilityLabel(home.mode == .expert ? "Expert mode" : "Customer mode")
-        .animation(.easeInOut(duration: 0.18), value: home.mode)
     }
 
     // MARK: - Hero (no border)
@@ -362,5 +349,16 @@ struct DebugBackendSheet: View {
             }
         }
         .presentationDetents([.medium])
+    }
+}
+
+private struct MenuGlassModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content.buttonStyle(.glass).buttonBorderShape(.circle)
+        } else {
+            content
+                .background(.ultraThinMaterial, in: Circle())
+        }
     }
 }
