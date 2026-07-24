@@ -43,13 +43,16 @@ struct OfflineAssistSessionView: View {
                 }
             }
 
+            // Chrome stays inside the safe area (below notch / above home indicator).
+            // Only the AR camera layer ignores safe area.
             VStack {
                 topBar
                 Spacer()
                 bottomChrome
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.top, 8)
+            .padding(.bottom, 8)
 
             HStack {
                 Spacer()
@@ -57,7 +60,6 @@ struct OfflineAssistSessionView: View {
                     .padding(.trailing, 8)
             }
         }
-        .ignoresSafeArea()
         .preferredColorScheme(.dark)
         .sheet(isPresented: $showAssets) {
             AssetsPlaceholderSheet()
