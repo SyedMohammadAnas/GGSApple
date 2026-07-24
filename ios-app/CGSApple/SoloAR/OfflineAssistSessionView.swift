@@ -2,9 +2,8 @@ import SwiftUI
 import RealityKit
 import ARKit
 import UIKit
-import Combine
 
-/// Offline “Create video tutorial” — world-relative AR annotations + Liquid Glass chrome.
+/// Offline “Create video tutorial” — TeamViewer Assist AR–style markers + Liquid Glass chrome.
 struct OfflineAssistSessionView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var viewModel = OfflineAssistViewModel()
@@ -14,6 +13,35 @@ struct OfflineAssistSessionView: View {
         ZStack {
             OfflineARContainer(viewModel: viewModel)
                 .ignoresSafeArea()
+
+            // Pointer uses SwiftUI drag in the same coordinate space as the glowing dot
+            // (UIKit ARView coords were drifting vs the overlay).
+            if viewModel.selectedTool == .pointer {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in
+                                viewModel.screenPointer = value.location
+                            }
+                    )
+
+                if let point = viewModel.screenPointer {
+                    ZStack {
+                        Circle()
+                            .fill(Color.red.opacity(0.4))
+                            .frame(width: 18, height: 18)
+                            .blur(radius: 4)
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 6, height: 6)
+                            .shadow(color: .red.opacity(0.85), radius: 3, x: 0, y: 0)
+                    }
+                    .position(point)
+                    .allowsHitTesting(false)
+                }
+            }
 
             VStack {
                 topBar
@@ -29,13 +57,14 @@ struct OfflineAssistSessionView: View {
                     .padding(.trailing, 8)
             }
         }
+        .ignoresSafeArea()
         .preferredColorScheme(.dark)
         .sheet(isPresented: $showAssets) {
             AssetsPlaceholderSheet()
                 .presentationDetents([.medium, .large])
         }
         .onAppear {
-            print("[OfflineAssist] opened — world-relative annotations + glass chrome")
+            print("[OfflineAssist] opened — surface-normal arrows + per-hit freehand ink")
         }
     }
 
@@ -161,46 +190,57 @@ struct OfflineAssistSessionView: View {
 @MainActor
 @Observable
 final class OfflineAssistViewModel {
-    var selectedTool: AnnotationTool = .freehand
+    /// Default matches TeamViewer: place surface arrows first.
+    var selectedTool: AnnotationTool = .arrow
+    /// Drawing tool to restore after undo / delete (do not jump back to arrow).
+    private var lastContentTool: AnnotationTool = .arrow
     var isMuted = false
     var isSpeakerOn = true
     var isVideoPaused = false
     var planeCount = 0
     var trackingNormal = false
     var annotationCount = 0
+    /// Screen-space pointer (UI overlay) — not world-anchored.
+    var screenPointer: CGPoint?
 
-    /// Bridge to AR coordinator for world-space undo/clear.
     weak var worldBridge: OfflineWorldBridge?
 
     var trackingLabel: String {
         if isVideoPaused { return "Paused" }
-        if trackingNormal && planeCount > 0 { return "Tracking" }
-        if trackingNormal { return "Scan surfaces" }
+        if trackingNormal && planeCount > 0 { return "Surfaces \(planeCount)" }
+        if trackingNormal { return "Scan all surfaces" }
         return "Starting…"
     }
 
     var hintText: String {
         switch selectedTool {
-        case .pointer: return "Drag — pointer stays in world and faces you"
-        case .arrow: return "Drag like on-screen — arrow anchors in world and billboards"
-        case .freehand: return "Draw on a detected plane — strokes stick to the surface"
-        case .circle: return "Drag like on-screen — circle anchors in world and billboards"
-        case .undo: return "Undo last world annotation"
-        case .delete: return "Clear all world annotations"
+        case .arrow: return "Tap a surface — arrow sticks perpendicular, pointing at it"
+        case .freehand: return "Draw light ink that sticks on surfaces in AR"
+        case .pointer: return "Drag — screen pointer (tiny red glow dot)"
+        case .undo: return "Undo last marker"
+        case .delete: return "Clear all markers"
         }
     }
 
     func selectTool(_ tool: AnnotationTool) {
-        selectedTool = tool
         print("[OfflineAssist] tool=\(tool.rawValue)")
         if tool == .undo {
             worldBridge?.undo()
             annotationCount = worldBridge?.annotationCount ?? 0
-            selectedTool = .freehand
-        } else if tool == .delete {
+            // Stay on highlighter / pointer / arrow — whatever was active.
+            selectedTool = lastContentTool
+            return
+        }
+        if tool == .delete {
             worldBridge?.clearAll()
             annotationCount = 0
-            selectedTool = .freehand
+            selectedTool = lastContentTool
+            return
+        }
+        selectedTool = tool
+        lastContentTool = tool
+        if tool != .pointer {
+            screenPointer = nil
         }
     }
 
@@ -220,352 +260,298 @@ final class OfflineAssistViewModel {
     }
 }
 
-/// Owned by AR coordinator — places RealityKit entities on plane hits.
-/// Freehand stays surface-stuck. Arrow / circle / pointer are screen-drawn
-/// shapes locked to a world point and always billboard toward the camera.
+// MARK: - World bridge
+
+/// Freehand = light unlit ink segments stuck on planes (not fancy lit 3D).
+/// Arrow = flat unlit mark perpendicular to surface.
+/// Pointer = screen-space UI only.
 @MainActor
 final class OfflineWorldBridge: NSObject {
     weak var arView: ARView?
-    private var strokeAnchors: [AnchorEntity] = []
-    /// Content roots that must face the camera every frame.
-    private var billboardRoots: [Entity] = []
-    private var pointerAnchor: AnchorEntity?
-    private var pointerBillboard: Entity?
-    private var draftAnchor: AnchorEntity?
-    private var draftBillboard: Entity?
 
-    /// Surface freehand: world-space points on the plane.
+    /// One undo/clear unit — an arrow is a single anchor; a stroke is many anchors.
+    private struct MarkerGroup {
+        var anchors: [AnchorEntity]
+
+        @MainActor
+        func removeFromParent() {
+            anchors.forEach { $0.removeFromParent() }
+        }
+    }
+
+    private var markers: [MarkerGroup] = []
+    /// In-progress freehand pieces (each placed like an arrow: AnchorEntity(world: hit)).
+    private var draftAnchors: [AnchorEntity] = []
+    private var draftPlaneID: UUID?
+    private var draftPlaneTransform: simd_float4x4?
     private var draftWorldPoints: [SIMD3<Float>] = []
-    /// Billboard tools: screen points + world anchor from first hit.
-    private var draftScreenPoints: [CGPoint] = []
-    private var draftAnchorWorld: SIMD3<Float>?
+    private var nextArrowNumber = 0
 
-    var annotationCount: Int { strokeAnchors.count }
+    private let markerColor = UIColor(red: 1.0, green: 0.48, blue: 0.0, alpha: 1.0)
+    private let highlighterColor = UIColor(red: 1.0, green: 0.75, blue: 0.1, alpha: 0.95)
 
-    private let strokeColor = UIColor.systemRed
-    private let pointerColor = UIColor.cyan
+    /// Thin ink; keep entity count low to avoid jetsam during draw.
+    private let highlighterRadius: Float = 0.0018
+    private let highlighterSampleSpacing: Float = 0.01
+    private let maxStrokePoints = 48
+    /// Sit just above the plane along its normal (matches arrow tip offset).
+    private let surfaceLift: Float = 0.002
+    /// Reject samples that leave the locked plane (meters).
+    private let planeStickTolerance: Float = 0.03
+
+    var annotationCount: Int { markers.count }
 
     func undo() {
-        guard let last = strokeAnchors.popLast() else { return }
-        // Drop matching billboard root if this stroke used one.
-        if let content = last.children.first {
-            billboardRoots.removeAll { $0 === content }
-        }
+        guard let last = markers.popLast() else { return }
         last.removeFromParent()
-        print("[OfflineAssist] undo world count=\(strokeAnchors.count)")
+        print("[OfflineAssist] undo count=\(markers.count)")
     }
 
     func clearAll() {
-        strokeAnchors.forEach { $0.removeFromParent() }
-        strokeAnchors.removeAll()
-        billboardRoots.removeAll()
-        pointerAnchor?.removeFromParent()
-        pointerAnchor = nil
-        pointerBillboard = nil
-        clearDraft()
-        print("[OfflineAssist] cleared world annotations")
+        markers.forEach { $0.removeFromParent() }
+        markers.removeAll()
+        discardDraft()
+        nextArrowNumber = 0
+        print("[OfflineAssist] cleared all markers")
     }
 
-    /// Keep billboard annotations facing the live camera (call from session updates).
-    func updateBillboards(cameraTransform: simd_float4x4) {
-        // Match camera rotation so local XY stays screen-aligned (always billboard).
-        let camOrientation = simd_quatf(cameraTransform)
-        for root in billboardRoots {
-            root.setOrientation(camOrientation, relativeTo: nil)
-        }
-        draftBillboard?.setOrientation(camOrientation, relativeTo: nil)
-        pointerBillboard?.setOrientation(camOrientation, relativeTo: nil)
-    }
+    // MARK: Arrow — few unlit entities, surface-normal
 
-    func begin(at screen: CGPoint, tool: AnnotationTool) {
-        clearDraft()
-        guard let world = hitWorld(screen) else {
-            print("[OfflineAssist] begin miss — no plane")
+    func placeArrow(at screen: CGPoint) {
+        guard let arView, let hit = hitResult(screen) else {
+            print("[OfflineAssist] arrow miss — keep scanning surfaces")
             return
         }
+        nextArrowNumber += 1
+        let number = nextArrowNumber
 
-        if tool == .pointer {
-            placePointer(at: world)
-            return
-        }
-
-        if tool == .freehand {
-            draftWorldPoints = [world]
-            rebuildSurfaceDraft(tool: tool)
-            return
-        }
-
-        // Arrow / circle: screen-feel stroke, world-anchored, always billboard.
-        draftAnchorWorld = world
-        draftScreenPoints = [screen]
-        rebuildBillboardDraft(tool: tool)
-    }
-
-    func move(to screen: CGPoint, tool: AnnotationTool) {
-        if tool == .pointer {
-            guard let world = hitWorld(screen) else { return }
-            placePointer(at: world)
-            return
-        }
-
-        if tool == .freehand {
-            guard let world = hitWorld(screen) else { return }
-            if draftWorldPoints.isEmpty {
-                draftWorldPoints = [world]
-            } else if let last = draftWorldPoints.last, length(world - last) >= 0.008 {
-                draftWorldPoints.append(world)
-            } else {
-                return
-            }
-            rebuildSurfaceDraft(tool: tool)
-            return
-        }
-
-        // Billboard tools — keep anchoring to the first hit; shape follows screen drag.
-        if draftAnchorWorld == nil {
-            guard let world = hitWorld(screen) else { return }
-            draftAnchorWorld = world
-            draftScreenPoints = [screen]
-        } else {
-            if let last = draftScreenPoints.last {
-                let dx = screen.x - last.x
-                let dy = screen.y - last.y
-                if (dx * dx + dy * dy) < 4 { return }
-            }
-            draftScreenPoints.append(screen)
-        }
-        rebuildBillboardDraft(tool: tool)
-    }
-
-    func end(tool: AnnotationTool) {
-        defer { clearDraft() }
-        if tool == .pointer { return }
-        guard let arView else { return }
-
-        if tool == .freehand {
-            guard draftWorldPoints.count >= 2 else { return }
-            let anchor = buildSurfaceStroke(points: draftWorldPoints, color: strokeColor)
-            arView.scene.addAnchor(anchor)
-            strokeAnchors.append(anchor)
-            print("[OfflineAssist] surface freehand points=\(draftWorldPoints.count)")
-            return
-        }
-
-        guard let origin = draftAnchorWorld, draftScreenPoints.count >= 2 else { return }
-        let localPoints = screenPointsToLocalXY(draftScreenPoints, anchorWorld: origin)
-        guard localPoints.count >= 2 else { return }
-        let built = buildBillboardStroke(
-            localPoints: localPoints,
-            worldOrigin: origin,
-            tool: tool,
-            color: strokeColor
-        )
-        arView.scene.addAnchor(built.anchor)
-        strokeAnchors.append(built.anchor)
-        billboardRoots.append(built.content)
-        // Snap orientation immediately.
-        if let frame = arView.session.currentFrame {
-            built.content.orientation = simd_quatf(frame.camera.transform)
-        }
-        print("[OfflineAssist] billboard \(tool.rawValue) points=\(localPoints.count)")
-    }
-
-    private func hitWorld(_ screen: CGPoint) -> SIMD3<Float>? {
-        guard let arView else { return nil }
-        let results =
-            arView.raycast(from: screen, allowing: .existingPlaneGeometry, alignment: .any)
-            + arView.raycast(from: screen, allowing: .estimatedPlane, alignment: .any)
-        guard let t = results.first?.worldTransform else { return nil }
-        return SIMD3<Float>(t.columns.3.x, t.columns.3.y, t.columns.3.z)
-    }
-
-    private func placePointer(at world: SIMD3<Float>) {
-        guard let arView else { return }
-        if pointerAnchor == nil {
-            let anchor = AnchorEntity(world: world)
-            let content = Entity()
-            content.name = "pointerBillboard"
-            // Screen-like ring (XY), not a surface disc.
-            let ring = makeCirclePolyline(radius: 0.025, lineRadius: 0.003, material: SimpleMaterial(color: pointerColor, isMetallic: false))
-            content.addChild(ring)
-            let dot = ModelEntity(
-                mesh: .generateSphere(radius: 0.008),
-                materials: [SimpleMaterial(color: pointerColor, isMetallic: false)]
-            )
-            content.addChild(dot)
-            anchor.addChild(content)
-            arView.scene.addAnchor(anchor)
-            pointerAnchor = anchor
-            pointerBillboard = content
-            if let frame = arView.session.currentFrame {
-                content.orientation = simd_quatf(frame.camera.transform)
-            }
-        } else {
-            pointerAnchor?.position = world
-        }
-    }
-
-    private func rebuildSurfaceDraft(tool: AnnotationTool) {
-        guard let arView, tool == .freehand else { return }
-        draftAnchor?.removeFromParent()
-        guard draftWorldPoints.count >= 1 else { return }
-        let anchor = buildSurfaceStroke(
-            points: draftWorldPoints,
-            color: strokeColor.withAlphaComponent(0.7)
-        )
+        let anchor = AnchorEntity(world: hit.worldTransform)
+        let content = makeSurfaceNormalArrow(number: number, color: markerColor)
+        content.position = SIMD3<Float>(0, surfaceLift, 0)
+        anchor.addChild(content)
         arView.scene.addAnchor(anchor)
-        draftAnchor = anchor
-        draftBillboard = nil
+        markers.append(MarkerGroup(anchors: [anchor]))
+        print("[OfflineAssist] placed surface-normal arrow #\(number)")
     }
 
-    private func rebuildBillboardDraft(tool: AnnotationTool) {
-        guard let arView, let origin = draftAnchorWorld else { return }
-        draftAnchor?.removeFromParent()
-        let localPoints = screenPointsToLocalXY(draftScreenPoints, anchorWorld: origin)
-        guard !localPoints.isEmpty else { return }
-        let built = buildBillboardStroke(
-            localPoints: localPoints,
-            worldOrigin: origin,
-            tool: tool,
-            color: strokeColor.withAlphaComponent(0.7)
-        )
-        arView.scene.addAnchor(built.anchor)
-        draftAnchor = built.anchor
-        draftBillboard = built.content
-        if let frame = arView.session.currentFrame {
-            built.content.orientation = simd_quatf(frame.camera.transform)
+    // MARK: Highlighter — arrow-identical placement (per-hit AnchorEntity)
+
+    /// Different approach from plane-local / ray∩plane: every sample is placed the
+    /// same way as an arrow tip — `AnchorEntity(world: hit.worldTransform)` + local lift.
+    /// Segments are also their own world anchors at the midpoint. No coordinate conversion.
+    func beginHighlighter(at screen: CGPoint) {
+        discardDraft()
+        guard let hit = inkHit(screen, locking: true), let arView else {
+            print("[OfflineAssist] highlighter begin miss")
+            return
+        }
+
+        draftPlaneID = (hit.anchor as? ARPlaneAnchor)?.identifier
+        draftPlaneTransform = hit.worldTransform
+        let start = worldPosition(hit)
+        draftWorldPoints = [start]
+
+        // Bead at start — identical transform path as arrows.
+        let bead = makeInkBeadAnchor(hit: hit)
+        arView.scene.addAnchor(bead)
+        draftAnchors.append(bead)
+        print("[OfflineAssist] highlighter locked planeID=\(draftPlaneID?.uuidString.prefix(8) ?? "est")")
+    }
+
+    func moveHighlighter(to screen: CGPoint) {
+        guard draftWorldPoints.count < maxStrokePoints,
+              let last = draftWorldPoints.last,
+              let arView,
+              let hit = inkHit(screen, locking: false)
+        else { return }
+
+        let point = worldPosition(hit)
+        guard length(point - last) >= highlighterSampleSpacing else { return }
+
+        draftWorldPoints.append(point)
+
+        // Bead on this hit (same as arrow tip placement).
+        let bead = makeInkBeadAnchor(hit: hit)
+        arView.scene.addAnchor(bead)
+        draftAnchors.append(bead)
+
+        // Connector between last and this world point.
+        if let segment = makeInkSegmentAnchor(from: last, to: point) {
+            arView.scene.addAnchor(segment)
+            draftAnchors.append(segment)
         }
     }
 
-    private func clearDraft() {
-        draftAnchor?.removeFromParent()
-        draftAnchor = nil
-        draftBillboard = nil
+    func endHighlighter() {
+        if draftWorldPoints.count < 2 || draftAnchors.isEmpty {
+            discardDraft()
+            return
+        }
+        markers.append(MarkerGroup(anchors: draftAnchors))
+        print("[OfflineAssist] ink stroke points=\(draftWorldPoints.count) anchors=\(draftAnchors.count) (per-hit world)")
+        draftAnchors = []
+        draftPlaneID = nil
+        draftPlaneTransform = nil
         draftWorldPoints = []
-        draftScreenPoints = []
-        draftAnchorWorld = nil
     }
 
-    // MARK: - Screen → local XY (camera-facing plane at world anchor)
-
-    private func screenPointsToLocalXY(_ screens: [CGPoint], anchorWorld: SIMD3<Float>) -> [SIMD3<Float>] {
-        guard let arView, let frame = arView.session.currentFrame, let first = screens.first else { return [] }
-        let cam = frame.camera.transform
-        let right = SIMD3<Float>(cam.columns.0.x, cam.columns.0.y, cam.columns.0.z)
-        let up = SIMD3<Float>(cam.columns.1.x, cam.columns.1.y, cam.columns.1.z)
-        let forward = -SIMD3<Float>(cam.columns.2.x, cam.columns.2.y, cam.columns.2.z)
-
-        guard let originWorld = intersectBillboardPlane(
-            screen: first,
-            planePoint: anchorWorld,
-            planeNormal: forward,
-            arView: arView
-        ) else { return [] }
-
-        var locals: [SIMD3<Float>] = [.zero]
-        for screen in screens.dropFirst() {
-            guard let world = intersectBillboardPlane(
-                screen: screen,
-                planePoint: anchorWorld,
-                planeNormal: forward,
-                arView: arView
-            ) else { continue }
-            let delta = world - originWorld
-            locals.append(SIMD3<Float>(dot(delta, right), dot(delta, up), 0))
-        }
-        return locals
+    private func discardDraft() {
+        draftAnchors.forEach { $0.removeFromParent() }
+        draftAnchors = []
+        draftPlaneID = nil
+        draftPlaneTransform = nil
+        draftWorldPoints = []
     }
 
-    private func intersectBillboardPlane(
-        screen: CGPoint,
-        planePoint: SIMD3<Float>,
-        planeNormal: SIMD3<Float>,
-        arView: ARView
-    ) -> SIMD3<Float>? {
-        guard let ray = arView.ray(through: screen) else { return nil }
-        let normal = normalize(planeNormal)
-        let denom = dot(ray.direction, normal)
-        guard abs(denom) > 1e-5 else { return nil }
-        let t = dot(planePoint - ray.origin, normal) / denom
-        guard t > 0 else { return nil }
-        return ray.origin + ray.direction * t
-    }
-
-    // MARK: - Builders
-
-    private func buildSurfaceStroke(points: [SIMD3<Float>], color: UIColor) -> AnchorEntity {
-        let origin = points[0]
-        let anchor = AnchorEntity(world: origin)
-        let material = SimpleMaterial(color: color, isMetallic: false)
-        addWorldPolyline(points, to: anchor, material: material, radius: 0.004)
+    /// Tiny sphere parented exactly like an arrow tip.
+    private func makeInkBeadAnchor(hit: ARRaycastResult) -> AnchorEntity {
+        let anchor = AnchorEntity(world: hit.worldTransform)
+        let bead = ModelEntity(
+            mesh: .generateSphere(radius: highlighterRadius * 1.4),
+            materials: [UnlitMaterial(color: highlighterColor)]
+        )
+        bead.position = SIMD3<Float>(0, surfaceLift, 0)
+        anchor.addChild(bead)
         return anchor
     }
 
-    private func buildBillboardStroke(
-        localPoints: [SIMD3<Float>],
-        worldOrigin: SIMD3<Float>,
-        tool: AnnotationTool,
-        color: UIColor
-    ) -> (anchor: AnchorEntity, content: Entity) {
-        let anchor = AnchorEntity(world: worldOrigin)
-        let content = Entity()
-        content.name = "billboardContent"
-        let material = SimpleMaterial(color: color, isMetallic: false)
+    /// Segment between two world points — own `AnchorEntity` at midpoint (arrow-style).
+    private func makeInkSegmentAnchor(from: SIMD3<Float>, to: SIMD3<Float>) -> AnchorEntity? {
+        let delta = to - from
+        let dist = length(delta)
+        guard dist > 0.0005 else { return nil }
 
-        switch tool {
-        case .arrow:
-            let start = localPoints[0]
-            let end = localPoints.last ?? start
-            addLocalPolyline([start, end], to: content, material: material, radius: 0.005)
-            addLocalArrowHead(from: start, to: end, parent: content, material: material)
-        case .circle:
-            let start = localPoints[0]
-            let end = localPoints.last ?? start
-            let radius = max(length(end - start), 0.02)
-            content.addChild(makeCirclePolyline(radius: radius, lineRadius: 0.004, material: material))
-        default:
-            addLocalPolyline(localPoints, to: content, material: material, radius: 0.004)
-        }
+        let mid = (from + to) / 2
+        // Lift midpoint along locked plane normal so the stroke sits above the surface.
+        let liftedMid = mid + lockedPlaneNormal() * surfaceLift
+        var transform = matrix_identity_float4x4
+        transform.columns.3 = SIMD4(liftedMid.x, liftedMid.y, liftedMid.z, 1)
 
-        anchor.addChild(content)
-        return (anchor, content)
+        let anchor = AnchorEntity(world: transform)
+        let mesh = MeshResource.generateBox(
+            width: highlighterRadius * 2,
+            height: highlighterRadius * 2,
+            depth: dist
+        )
+        let entity = ModelEntity(mesh: mesh, materials: [UnlitMaterial(color: highlighterColor)])
+        // Aim box depth (-Z) along the stroke in the anchor’s local/world-aligned space.
+        let dir = normalize(delta)
+        entity.look(at: dir, from: .zero, relativeTo: anchor)
+        anchor.addChild(entity)
+        return anchor
     }
 
-    private func addWorldPolyline(
-        _ points: [SIMD3<Float>],
-        to parent: Entity,
-        material: SimpleMaterial,
-        radius: Float
-    ) {
-        let origin = points[0]
-        for i in 0..<(points.count - 1) {
-            let a = points[i] - origin
-            let b = points[i + 1] - origin
-            addSegment(from: a, to: b, parent: parent, material: material, radius: radius)
+    private func lockedPlaneNormal() -> SIMD3<Float> {
+        guard let plane = draftPlaneTransform else {
+            return SIMD3<Float>(0, 1, 0)
         }
+        return normalize(SIMD3<Float>(
+            plane.columns.1.x,
+            plane.columns.1.y,
+            plane.columns.1.z
+        ))
     }
 
-    private func addLocalPolyline(
-        _ points: [SIMD3<Float>],
-        to parent: Entity,
-        material: SimpleMaterial,
-        radius: Float
-    ) {
-        for i in 0..<(points.count - 1) {
-            addSegment(from: points[i], to: points[i + 1], parent: parent, material: material, radius: radius)
+    // MARK: Hits
+
+    private func hitResult(_ screen: CGPoint) -> ARRaycastResult? {
+        guard let arView else { return nil }
+        if let hit = arView.raycast(from: screen, allowing: .existingPlaneGeometry, alignment: .any).first {
+            return hit
         }
+        if let hit = arView.raycast(from: screen, allowing: .existingPlaneInfinite, alignment: .any).first {
+            return hit
+        }
+        return arView.raycast(from: screen, allowing: .estimatedPlane, alignment: .any).first
     }
 
-    private func addSegment(
+    /// Same raycast stack as arrows; after begin, stay on the locked plane only.
+    private func inkHit(_ screen: CGPoint, locking: Bool) -> ARRaycastResult? {
+        guard let arView else { return nil }
+
+        let geo = arView.raycast(from: screen, allowing: .existingPlaneGeometry, alignment: .any)
+        let inf = arView.raycast(from: screen, allowing: .existingPlaneInfinite, alignment: .any)
+        let est = arView.raycast(from: screen, allowing: .estimatedPlane, alignment: .any)
+        let ordered = geo + inf + est
+
+        if locking {
+            return ordered.first
+        }
+
+        if let planeID = draftPlaneID {
+            if let match = ordered.first(where: { ($0.anchor as? ARPlaneAnchor)?.identifier == planeID }) {
+                return match
+            }
+            return nil
+        }
+
+        guard let hit = ordered.first, isNearLockedPlane(hit) else { return nil }
+        return hit
+    }
+
+    private func isNearLockedPlane(_ hit: ARRaycastResult) -> Bool {
+        guard let plane = draftPlaneTransform else { return true }
+        let world = worldPosition(hit)
+        let origin = SIMD3<Float>(plane.columns.3.x, plane.columns.3.y, plane.columns.3.z)
+        let normal = normalize(SIMD3<Float>(
+            plane.columns.1.x,
+            plane.columns.1.y,
+            plane.columns.1.z
+        ))
+        return abs(dot(world - origin, normal)) <= planeStickTolerance
+    }
+
+    private func worldPosition(_ hit: ARRaycastResult) -> SIMD3<Float> {
+        let t = hit.worldTransform
+        return SIMD3(t.columns.3.x, t.columns.3.y, t.columns.3.z)
+    }
+
+    // MARK: Geometry (unlit only — stick in AR, no fancy shading)
+
+    private func makeSurfaceNormalArrow(number: Int, color: UIColor) -> Entity {
+        let root = Entity()
+        let mat = UnlitMaterial(color: color)
+        let lineRadius: Float = 0.003
+
+        let tip = SIMD3<Float>(0, 0.004, 0)
+        let base = SIMD3<Float>(0, 0.08, 0)
+        addFlatSegment(from: base, to: tip, radius: lineRadius, material: mat, parent: root)
+        addFlatSegment(from: tip, to: SIMD3(-0.024, 0.028, 0), radius: lineRadius, material: mat, parent: root)
+        addFlatSegment(from: tip, to: SIMD3(0.024, 0.028, 0), radius: lineRadius, material: mat, parent: root)
+
+        let badge = ModelEntity(
+            mesh: .generatePlane(width: 0.028, depth: 0.028),
+            materials: [UnlitMaterial(color: color)]
+        )
+        badge.orientation = simd_quatf(angle: -.pi / 2, axis: SIMD3(1, 0, 0))
+        badge.position = SIMD3(0.04, 0.06, 0)
+        root.addChild(badge)
+
+        let textMesh = MeshResource.generateText(
+            "\(number)",
+            extrusionDepth: 0.0005,
+            font: .boldSystemFont(ofSize: 0.032),
+            containerFrame: .zero,
+            alignment: .center,
+            lineBreakMode: .byTruncatingTail
+        )
+        let glyph = ModelEntity(mesh: textMesh, materials: [UnlitMaterial(color: .white)])
+        glyph.position = SIMD3(0.028, 0.048, 0.002)
+        root.addChild(glyph)
+
+        return root
+    }
+
+    private func addFlatSegment(
         from a: SIMD3<Float>,
         to b: SIMD3<Float>,
-        parent: Entity,
-        material: SimpleMaterial,
-        radius: Float
+        radius: Float,
+        material: UnlitMaterial,
+        parent: Entity
     ) {
         let segment = b - a
         let dist = length(segment)
-        guard dist > 0.001 else { return }
+        guard dist > 0.0005 else { return }
         let mesh = MeshResource.generateBox(width: radius * 2, height: radius * 2, depth: dist)
         let entity = ModelEntity(mesh: mesh, materials: [material])
         entity.position = (a + b) / 2
@@ -573,39 +559,17 @@ final class OfflineWorldBridge: NSObject {
         entity.look(at: entity.position + direction, from: entity.position, relativeTo: parent)
         parent.addChild(entity)
     }
+}
 
-    private func addLocalArrowHead(
-        from start: SIMD3<Float>,
-        to end: SIMD3<Float>,
-        parent: Entity,
-        material: SimpleMaterial
-    ) {
-        let dir = normalize(end - start)
-        for i in 0..<4 {
-            let t = Float(i) / 3.0
-            let r = 0.012 * (1.0 - t * 0.85)
-            let tip = ModelEntity(
-                mesh: .generateSphere(radius: r),
-                materials: [material]
-            )
-            tip.position = end - dir * (0.008 * Float(i))
-            parent.addChild(tip)
-        }
-    }
+// MARK: - AR configuration
 
-    private func makeCirclePolyline(radius: Float, lineRadius: Float, material: SimpleMaterial) -> Entity {
-        let root = Entity()
-        let segments = 48
-        var ring: [SIMD3<Float>] = []
-        for i in 0...segments {
-            let t = Float(i) / Float(segments) * 2 * .pi
-            // Local XY — faces camera when parent is billboarded.
-            ring.append(SIMD3<Float>(cos(t) * radius, sin(t) * radius, 0))
-        }
-        for i in 0..<(ring.count - 1) {
-            addSegment(from: ring[i], to: ring[i + 1], parent: root, material: material, radius: lineRadius)
-        }
-        return root
+enum OfflineARConfig {
+    /// Lean tracking — planes only. No env maps / mesh recon (those blow memory).
+    static func make() -> ARWorldTrackingConfiguration {
+        let config = ARWorldTrackingConfiguration()
+        config.planeDetection = [.horizontal, .vertical]
+        config.environmentTexturing = .none
+        return config
     }
 }
 
@@ -618,12 +582,21 @@ struct OfflineARContainer: UIViewRepresentable {
         let arView = ARView(frame: .zero)
         arView.automaticallyConfigureSession = false
         arView.session.delegate = context.coordinator
+        arView.debugOptions = []
+        // Cheaper RealityKit path — annotations only need to stick, not look photographic.
+        arView.renderOptions = [
+            .disableMotionBlur,
+            .disableDepthOfField,
+            .disableGroundingShadows,
+            .disablePersonOcclusion
+        ]
 
-        let config = ARWorldTrackingConfiguration()
-        config.planeDetection = [.horizontal, .vertical]
-        config.environmentTexturing = .automatic
+        let config = OfflineARConfig.make()
         arView.session.run(config, options: [.resetTracking, .removeExistingAnchors])
-        print("[OfflineAssist] AR session run")
+        print("[OfflineAssist] AR session run — lean planes + unlit sticky annotations")
+
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
+        arView.addGestureRecognizer(tap)
 
         let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePan(_:)))
         pan.maximumNumberOfTouches = 1
@@ -647,13 +620,15 @@ struct OfflineARContainer: UIViewRepresentable {
         Coordinator(viewModel: viewModel)
     }
 
-    @MainActor
+    /// Not @MainActor — ARSessionDelegate must return quickly without retaining ARFrames.
     final class Coordinator: NSObject, ARSessionDelegate {
         let viewModel: OfflineAssistViewModel
         weak var arView: ARView?
         var bridge: OfflineWorldBridge?
         private var planeIds = Set<UUID>()
         private var wasPaused = false
+        private var frameTick = 0
+        private var lastReportedPlaneCount = -1
 
         init(viewModel: OfflineAssistViewModel) {
             self.viewModel = viewModel
@@ -664,45 +639,59 @@ struct OfflineARContainer: UIViewRepresentable {
                 arView.session.pause()
                 wasPaused = true
             } else if !paused && wasPaused {
-                let config = ARWorldTrackingConfiguration()
-                config.planeDetection = [.horizontal, .vertical]
-                config.environmentTexturing = .automatic
-                arView.session.run(config)
+                arView.session.run(OfflineARConfig.make())
                 wasPaused = false
             }
         }
 
-        @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
-            guard let arView, !viewModel.isVideoPaused else { return }
+        @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+            // UIKit gestures arrive on the main thread — avoid Task queues that retain work.
+            guard Thread.isMainThread, let arView else { return }
             let point = gesture.location(in: arView)
-            let tool = viewModel.selectedTool
-            guard tool != .undo, tool != .delete else { return }
+            MainActor.assumeIsolated {
+                guard !viewModel.isVideoPaused else { return }
+                if viewModel.selectedTool == .arrow {
+                    bridge?.placeArrow(at: point)
+                    viewModel.annotationCount = bridge?.annotationCount ?? 0
+                }
+            }
+        }
 
-            switch gesture.state {
-            case .began:
-                bridge?.begin(at: point, tool: tool)
-            case .changed:
-                bridge?.move(to: point, tool: tool)
-            case .ended, .cancelled:
-                bridge?.end(tool: tool)
-                viewModel.annotationCount = bridge?.annotationCount ?? 0
-            default:
-                break
+        @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
+            guard Thread.isMainThread, let arView else { return }
+            let point = gesture.location(in: arView)
+            let state = gesture.state
+            MainActor.assumeIsolated {
+                guard !viewModel.isVideoPaused else { return }
+                guard viewModel.selectedTool == .freehand else { return }
+                switch state {
+                case .began:
+                    bridge?.beginHighlighter(at: point)
+                case .changed:
+                    bridge?.moveHighlighter(to: point)
+                case .ended, .cancelled:
+                    bridge?.endHighlighter()
+                    viewModel.annotationCount = bridge?.annotationCount ?? 0
+                default:
+                    break
+                }
             }
         }
 
         func session(_ session: ARSession, didUpdate frame: ARFrame) {
-            // Copy values only — do not retain ARFrame (avoids camera stall warning).
+            // Copy ONLY scalars — never hop to MainActor while still holding `frame`.
             let isNormal: Bool
             if case .normal = frame.camera.trackingState {
                 isNormal = true
             } else {
                 isNormal = false
             }
-            let cameraTransform = frame.camera.transform
-            Task { @MainActor [weak self] in
-                self?.viewModel.trackingNormal = isNormal
-                self?.bridge?.updateBillboards(cameraTransform: cameraTransform)
+            frameTick += 1
+            // Throttle UI updates so MainActor isn't flooded (was retaining ARFrames).
+            guard frameTick % 20 == 0 else { return }
+            let normal = isNormal
+            DispatchQueue.main.async { [weak self] in
+                self?.viewModel.trackingNormal = normal
             }
         }
 
@@ -712,10 +701,7 @@ struct OfflineARContainer: UIViewRepresentable {
                     planeIds.insert(plane.identifier)
                 }
             }
-            let count = planeIds.count
-            Task { @MainActor [weak self] in
-                self?.viewModel.planeCount = count
-            }
+            publishPlaneCountIfNeeded()
         }
 
         func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
@@ -724,8 +710,14 @@ struct OfflineARContainer: UIViewRepresentable {
                     planeIds.remove(plane.identifier)
                 }
             }
+            publishPlaneCountIfNeeded()
+        }
+
+        private func publishPlaneCountIfNeeded() {
             let count = planeIds.count
-            Task { @MainActor [weak self] in
+            guard count != lastReportedPlaneCount else { return }
+            lastReportedPlaneCount = count
+            DispatchQueue.main.async { [weak self] in
                 self?.viewModel.planeCount = count
             }
         }

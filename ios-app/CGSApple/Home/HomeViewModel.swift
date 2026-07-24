@@ -46,6 +46,11 @@ final class HomeViewModel {
 
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
+                // Pause polling while offline Assist is open (saves network + main-thread noise).
+                if self?.showSoloAR == true {
+                    try? await Task.sleep(nanoseconds: 2_500_000_000)
+                    continue
+                }
                 await self?.pollForIncomingExpert()
                 try? await Task.sleep(nanoseconds: 2_500_000_000)
             }

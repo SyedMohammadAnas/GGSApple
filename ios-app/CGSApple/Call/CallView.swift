@@ -207,17 +207,17 @@ struct LiveKitVideoView: UIViewRepresentable {
     }
 }
 
+/// TeamViewer Assist AR–style tool set (shared offline + live chrome).
 enum AnnotationTool: String, CaseIterable, Identifiable {
-    case pointer, arrow, freehand, circle, undo, delete
+    case arrow, freehand, pointer, undo, delete
 
     var id: String { rawValue }
 
     var systemImage: String {
         switch self {
-        case .pointer: return "cursorarrow"
-        case .arrow: return "arrow.down"
-        case .freehand: return "pencil"
-        case .circle: return "circle"
+        case .arrow: return "arrow.down.to.line"
+        case .freehand: return "highlighter"
+        case .pointer: return "hand.point.up.left.fill"
         case .undo: return "arrow.uturn.backward"
         case .delete: return "trash"
         }
