@@ -17,8 +17,8 @@ Build/install:
 
 ```powershell
 cd android-app
-.\gradlew installMasterDebug    # com.cgsapple.remotear — "Master"
-.\gradlew installInstantDebug   # com.cgsapple.remotear.instant — "Instant"
+.\gradlew installMasterDebug    # com.ggsapple.remotear — "Master"
+.\gradlew installInstantDebug   # com.ggsapple.remotear.instant — "Instant"
 ```
 
 ---

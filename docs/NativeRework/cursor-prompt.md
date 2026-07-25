@@ -82,7 +82,7 @@ The backend is working and must not be changed:
   - Tables: `profiles`, `sessions`, `models` — schema in `backend-schema.md`
   - Auth: Google OAuth with Client IDs already configured
   - Deep link: `remotear://auth-callback`
-  - Android package: `com.cgsapple.remotear`
+  - Android package: `com.ggsapple.remotear`
   - Debug SHA-1: `5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25`
 
 - **Backend API (Node.js + Docker):** Running at `http://localhost:3000` (or Cloudflare tunnel URL)
@@ -106,14 +106,14 @@ The backend is working and must not be changed:
 - Server laptop running Docker (backend + LiveKit) on the same WiFi
 - Android SDK at `D:\AndroidStudio`
 - JAVA_HOME: `C:\Program Files\Microsoft\jdk-17.0.19.10-hotspot` (JDK 17, not 21 or 25)
-- Project root: `d:\GitHub Projects\CGSApple`
-- New Android app: `d:\GitHub Projects\CGSApple\android-app\`
+- Project root: `d:\GitHub Projects\GGSApple`
+- New Android app: `d:\GitHub Projects\GGSApple\android-app\`
 
 To install on both phones:
 ```powershell
 # In Android Studio: Run → Select deployment target → choose each phone
 # Or via Gradle:
-cd "d:\GitHub Projects\CGSApple\android-app"
+cd "d:\GitHub Projects\GGSApple\android-app"
 ./gradlew installDebug    # installs on the first connected device
 # Set ANDROID_SERIAL env var to target a specific device from `adb devices`
 ```

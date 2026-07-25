@@ -193,7 +193,7 @@ Fallback is not just a UI flag — it must **fully release camera hardware** bef
    ```
 3. Rebuild and reinstall: `.\gradlew installDebug`
 
-Docker must be running (`docker ps` shows `cgsapple-api-1` and `cgsapple-livekit-1`).
+Docker must be running (`docker ps` shows `ggsapple-api-1` and `ggsapple-livekit-1`).
 
 ---
 

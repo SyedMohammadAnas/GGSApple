@@ -6,8 +6,8 @@ Standalone web app in `asset-dashboard/` — **not** bundled with the Docker API
 
 | | URL |
 |---|-----|
-| **Production** | https://cgs-asset-dashboard.vercel.app |
-| **Vercel project** | `syedmohammadanas-projects/cgs-asset-dashboard` |
+| **Production** | https://ggs-asset-dashboard.vercel.app |
+| **Vercel project** | `syedmohammadanas-projects/ggs-asset-dashboard` |
 
 API routes on Vercel proxy to your tunneled Docker backend (`BACKEND_API_URL`). The dashboard key never ships to the browser.
 
@@ -46,10 +46,10 @@ Update `BACKEND_API_URL` whenever you restart the Cloudflare quick tunnel.
 
 Local git repo is initialized in `asset-dashboard/`. `gh` CLI was not available in this environment.
 
-1. Create repo on GitHub (e.g. `cgs-asset-dashboard`)
+1. Create repo on GitHub (e.g. `ggs-asset-dashboard`)
 2. ```powershell
    cd asset-dashboard
-   git remote add origin https://github.com/<you>/cgs-asset-dashboard.git
+   git remote add origin https://github.com/<you>/ggs-asset-dashboard.git
    git push -u origin master
    ```
 3. In Vercel → Project Settings → Git → Connect repository

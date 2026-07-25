@@ -6,7 +6,7 @@ Notes from debugging sessions, fixes, and infrastructure setup. Add new entries 
 
 ## Native Android — new Samsung phones (2026-07-21 / landed 2026-07-22)
 
-Verified on Samsung A35 (SM-A356E) + S24 FE (SM-S721B), both Android 16. Vault: SergantSwaggBase `Progress/CGSApple-New-Phones-AR-Fixes-2026-07-22` + pitfalls under `Projects/CGSApple/`.
+Verified on Samsung A35 (SM-A356E) + S24 FE (SM-S721B), both Android 16. Vault: SergantSwaggBase `Progress/GGSApple-New-Phones-AR-Fixes-2026-07-22` + pitfalls under `Projects/GGSApple/`.
 
 ### ARCore `INSTALL_REQUESTED` must wait, not fall back
 

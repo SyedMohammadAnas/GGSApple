@@ -360,7 +360,7 @@ For LAN development, you can also use the server's LAN IP directly:
   664161950009-qp2d5g0qdejma6m2o6c1g3pq5gl4l84e.apps.googleusercontent.com
   664161950009-t7dsi2ft5oajrm4i7htseg7idadtpcm1.apps.googleusercontent.com
   ```
-- Android package name: `com.cgsapple.remotear`
+- Android package name: `com.ggsapple.remotear`
 - Debug SHA-1: `5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25`
 - Supabase redirect URL: `remotear://auth-callback`
 - App deep link scheme: `remotear`

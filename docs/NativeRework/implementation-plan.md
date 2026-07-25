@@ -13,7 +13,7 @@ backend API, Docker, tunnels) is working before writing any app code.
 
 ### Tasks
 - Create new Android project in `android-app/` at the repo root using Android Studio:
-  - Package: `com.cgsapple.remotear`
+  - Package: `com.ggsapple.remotear`
   - Min SDK: 26
   - Language: Kotlin
   - UI: Jetpack Compose

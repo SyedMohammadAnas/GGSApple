@@ -42,7 +42,7 @@ cloudflared tunnel --url http://localhost:7880
 Ensure Docker is running:
 
 ```powershell
-cd "d:\GitHub Projects\CGSApple"
+cd "d:\GitHub Projects\GGSApple"
 docker compose up -d
 ```
 

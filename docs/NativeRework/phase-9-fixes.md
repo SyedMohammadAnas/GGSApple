@@ -3,7 +3,7 @@
 ## 3D asset dashboard (Vercel)
 
 - Moved from `backend/public/dashboard/` → **`asset-dashboard/`** (standalone repo)
-- Deployed: **https://cgs-asset-dashboard.vercel.app**
+- Deployed: **https://ggs-asset-dashboard.vercel.app**
 - Serverless `/api/*` proxies to tunneled Docker backend with `DASHBOARD_KEY` server-side
 - Env vars configured on Vercel (Supabase, tunnel URLs, API URL)
 

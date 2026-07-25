@@ -285,7 +285,7 @@ However, for the annotation rendering (lines/arrows/circles), SceneView's node s
 - LiveKit Docker self-hosted setup: existing `docker-compose.yml`
 - Backend API: existing Node.js / Express on port 3000
 - SDK path: `D:\AndroidStudio`
-- Project root: `d:\GitHub Projects\CGSApple`
+- Project root: `d:\GitHub Projects\GGSApple`
 
 ---
 

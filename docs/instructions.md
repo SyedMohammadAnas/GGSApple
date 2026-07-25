@@ -18,7 +18,7 @@
 ### 1. Clone and install
 
 ```powershell
-cd "d:\GitHub Projects\CGSApple"
+cd "d:\GitHub Projects\GGSApple"
 
 # Backend dependencies
 cd backend
@@ -57,7 +57,7 @@ copy .env.example .env
 ### 3. Start backend (Docker — recommended for server laptop)
 
 ```powershell
-cd "d:\GitHub Projects\CGSApple"
+cd "d:\GitHub Projects\GGSApple"
 docker compose up -d --build
 docker compose ps
 Invoke-RestMethod http://localhost:3000/health
@@ -65,7 +65,7 @@ Invoke-RestMethod http://localhost:3000/health
 
 Expected:
 
-- `cgsapple-api-1` and `cgsapple-livekit-1` show **Up**
+- `ggsapple-api-1` and `ggsapple-livekit-1` show **Up**
 - Health returns `{ "status": "ok", "timestamp": "..." }`
 
 Do **not** run `npm run dev` at the same time — both bind port 3000.
@@ -75,7 +75,7 @@ Do **not** run `npm run dev` at the same time — both bind port 3000.
 Use this only when Docker is **not** running the API container:
 
 ```powershell
-cd "d:\GitHub Projects\CGSApple\backend"
+cd "d:\GitHub Projects\GGSApple\backend"
 npm run dev
 ```
 
@@ -146,7 +146,7 @@ Copy the **Client ID** and **Client secret** — paste into Supabase in Step B.
 | Field                         | Value                                                         |
 | ----------------------------- | ------------------------------------------------------------- |
 | Name                          | `Remote AR Android Debug`                                     |
-| Package name                  | `com.cgsapple.remotear`                                       |
+| Package name                  | `com.ggsapple.remotear`                                       |
 | SHA-1 certificate fingerprint | `5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25` |
 
 
@@ -155,7 +155,7 @@ Copy the **Client ID** and **Client secret** — paste into Supabase in Step B.
 Re-run to print SHA-1 anytime:
 
 ```powershell
-keytool -list -v -keystore "d:\GitHub Projects\CGSApple\remote-ar\android\app\debug.keystore" -alias androiddebugkey -storepass android -keypass android
+keytool -list -v -keystore "d:\GitHub Projects\GGSApple\remote-ar\android\app\debug.keystore" -alias androiddebugkey -storepass android -keypass android
 ```
 
 #### Step B — Supabase Dashboard
@@ -250,7 +250,7 @@ Both phones use `phoneDebug` and the same `.env` — one Metro on **8081** is en
 | Phone 2 can't load JS / red screen          | Reinstall with `npm run android:phone2` (must use Metro port **8081**, not 8082)                    |
 | Phone tries `ws://10.0.2.2:7880`            | Rebuild phone flavor (`npm run android:phone`); phone must use Cloudflare `wss://` URL              |
 | `redirect_uri_mismatch`                     | Web client redirect URI must be exactly `https://suuellchcoegerddqyjb.supabase.co/auth/v1/callback` |
-| Google sign-in works on web but not Android | Add Android OAuth client with package `com.cgsapple.remotear` + correct SHA-1                       |
+| Google sign-in works on web but not Android | Add Android OAuth client with package `com.ggsapple.remotear` + correct SHA-1                       |
 | App doesn't return after login              | Add `remote-ar://auth-callback` to Supabase redirect URLs                                           |
 | `Access blocked`                            | Add your Gmail under OAuth consent screen → Test users                                              |
 | Technician hears audio but no video         | Both on `phoneDebug` build; check Docker LiveKit logs for `mediaTrack published`                    |
@@ -282,7 +282,7 @@ If Gradle fails with `Unable to delete directory` under `react-native-screens`, 
 **One-time:** Android SDK is at `D:\AndroidStudio` (not the default `%LOCALAPPDATA%\Android\Sdk`). Run:
 
 ```powershell
-cd "d:\GitHub Projects\CGSApple"
+cd "d:\GitHub Projects\GGSApple"
 .\scripts\setup-android-env.ps1
 ```
 
@@ -294,7 +294,7 @@ adb devices   # should show your phone or emulator
 
 ```powershell
 # Phone 1 (customer / AR)
-cd "d:\GitHub Projects\CGSApple\remote-ar"
+cd "d:\GitHub Projects\GGSApple\remote-ar"
 npm run android:phone
 
 # Phone 2 (technician)
@@ -330,7 +330,7 @@ curl.exe -s -o NUL -w "%{http_code}" http://localhost:3000/assets/models/sparkpl
 ### Test: Model file sizes (Draco compression)
 
 ```powershell
-Get-ChildItem "d:\GitHub Projects\CGSApple\backend\assets\models\*.glb" | Select-Object Name, @{N='MB';E={[math]::Round($_.Length/1MB,2)}}
+Get-ChildItem "d:\GitHub Projects\GGSApple\backend\assets\models\*.glb" | Select-Object Name, @{N='MB';E={[math]::Round($_.Length/1MB,2)}}
 ```
 
 **Expected:** All files under 10 MB.
@@ -388,7 +388,7 @@ Expo defaults to `C:\Users\<you>\AppData\Local\Android\Sdk`. This project uses `
 **Fix (one-time):**
 
 ```powershell
-cd "d:\GitHub Projects\CGSApple"
+cd "d:\GitHub Projects\GGSApple"
 .\scripts\setup-android-env.ps1
 ```
 
@@ -516,7 +516,7 @@ adb logcat -s SharedCamera ARCameraModule ARCameraRenderer ReactNativeJS
 Confirm `phoneDebug` installed. Reinstall:
 
 ```powershell
-cd "d:\GitHub Projects\CGSApple\remote-ar\android"
+cd "d:\GitHub Projects\GGSApple\remote-ar\android"
 $env:ANDROID_SERIAL="RZCWA1ZL43K"   # your phone serial
 .\gradlew app:installPhoneDebug -PreactNativeDevServerPort=8081
 ```
@@ -529,7 +529,7 @@ See [`native-spike/README.md`](../native-spike/README.md). Emulator can join spi
 
 ```powershell
 # 1 — Docker
-cd "d:\GitHub Projects\CGSApple"
+cd "d:\GitHub Projects\GGSApple"
 docker compose up -d --build
 
 # 2 — API tunnel
@@ -539,7 +539,7 @@ cloudflared tunnel --url http://localhost:3000
 cloudflared tunnel --url http://localhost:7880
 
 # 4 — Metro + both phones
-cd "d:\GitHub Projects\CGSApple\remote-ar"
+cd "d:\GitHub Projects\GGSApple\remote-ar"
 npm run start:phone
 # In another terminal (after Metro is up):
 npm run android:phone
@@ -556,7 +556,7 @@ npm run android:phone2
 
 ```powershell
 # Start backend (Docker — recommended)
-cd "d:\GitHub Projects\CGSApple"
+cd "d:\GitHub Projects\GGSApple"
 docker compose up -d --build
 docker compose ps
 Invoke-RestMethod http://localhost:3000/health

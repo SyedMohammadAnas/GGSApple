@@ -5,7 +5,7 @@ Run these commands on the server laptop **after** `docker compose up -d` is heal
 ## Prerequisites
 
 ```powershell
-cd "d:\GitHub Projects\CGSApple"
+cd "d:\GitHub Projects\GGSApple"
 docker compose ps          # api + livekit should be Up
 Invoke-RestMethod http://localhost:3000/health   # { "status": "ok", ... }
 ```

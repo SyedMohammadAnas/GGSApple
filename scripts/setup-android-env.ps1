@@ -57,7 +57,7 @@ After restarting the terminal:
 
 ```powershell
 adb devices
-cd "d:\GitHub Projects\CGSApple\remote-ar"
+cd "d:\GitHub Projects\GGSApple\remote-ar"
 npx expo run:android
 ```
 

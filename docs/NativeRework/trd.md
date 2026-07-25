@@ -37,12 +37,12 @@
 ## 2. Project Structure
 
 ```
-CGSApple/
+GGSApple/
 ├── android-app/                    ← NEW: Native Kotlin app (this entire folder is new)
 │   ├── app/
 │   │   ├── src/main/
 │   │   │   ├── AndroidManifest.xml
-│   │   │   ├── kotlin/com/cgsapple/remotear/
+│   │   │   ├── kotlin/com/ggsapple/remotear/
 │   │   │   │   ├── MainActivity.kt
 │   │   │   │   ├── RemoteArApplication.kt
 │   │   │   │   ├── di/                        ← Hilt modules
@@ -347,7 +347,7 @@ Permissions are requested at runtime before `ARCoreManager.createSession()` is c
 android {
     compileSdk = 35
     defaultConfig {
-        applicationId = "com.cgsapple.remotear"
+        applicationId = "com.ggsapple.remotear"
         minSdk = 26
         targetSdk = 35
         buildConfigField("String", "SUPABASE_URL", "\"${project.findProperty("SUPABASE_URL")}\"")

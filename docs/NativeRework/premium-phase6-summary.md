@@ -9,13 +9,13 @@
 
 ## Call UI overhaul
 
-- **Glass chrome** — [`AssistCallUi.kt`](../../android-app/app/src/main/kotlin/com/cgsapple/remotear/ui/call/AssistCallUi.kt)
+- **Glass chrome** — [`AssistCallUi.kt`](../../android-app/app/src/main/kotlin/com/ggsapple/remotear/ui/call/AssistCallUi.kt)
   - Top-left session pill → session options sheet
   - Right sidebar: pointer, arrow, draw, circle, undo, delete
   - Bottom control sheet: speaker, mute, pause, end
   - Expandable asset drawer with search + recent models
 
-- **Full-screen AR/video layout** — [`CallScreens.kt`](../../android-app/app/src/main/kotlin/com/cgsapple/remotear/ui/call/CallScreens.kt)
+- **Full-screen AR/video layout** — [`CallScreens.kt`](../../android-app/app/src/main/kotlin/com/ggsapple/remotear/ui/call/CallScreens.kt)
 
 ---
 

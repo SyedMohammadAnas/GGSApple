@@ -21,7 +21,7 @@
 | Backend Dockerfile: `mkdir -p public` | Done |
 | Device verify A35 customer + S24 FE expert | Done |
 
-Vault: SergantSwaggBase `Progress/CGSApple-New-Phones-AR-Fixes-2026-07-22`.
+Vault: SergantSwaggBase `Progress/GGSApple-New-Phones-AR-Fixes-2026-07-22`.
 
 ---
 
@@ -60,8 +60,8 @@ See `phase-9-fixes.md` and `asset-dashboard.md`.
 
 ```powershell
 cd android-app
-.\gradlew installMasterDebug    # "Master" — com.cgsapple.remotear
-.\gradlew installInstantDebug    # "Instant" — com.cgsapple.remotear.instant
+.\gradlew installMasterDebug    # "Master" — com.ggsapple.remotear
+.\gradlew installInstantDebug    # "Instant" — com.ggsapple.remotear.instant
 ```
 
 ### Docs added/updated
@@ -104,8 +104,8 @@ See `premium-phase6-summary.md` for full file list.
 
 ```powershell
 cd android-app
-.\gradlew installPremiumDebug   # com.cgsapple.remotear
-.\gradlew installFreeDebug      # com.cgsapple.remotear.free
+.\gradlew installPremiumDebug   # com.ggsapple.remotear
+.\gradlew installFreeDebug      # com.ggsapple.remotear.free
 ```
 
 ### Docs added

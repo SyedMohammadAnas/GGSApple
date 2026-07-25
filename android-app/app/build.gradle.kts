@@ -20,11 +20,11 @@ fun localProp(name: String, default: String = ""): String =
     localProperties.getProperty(name)?.trim().orEmpty().ifEmpty { default }
 
 android {
-    namespace = "com.cgsapple.remotear"
+    namespace = "com.ggsapple.remotear"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.cgsapple.remotear"
+        applicationId = "com.ggsapple.remotear"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

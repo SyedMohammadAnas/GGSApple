@@ -1,4 +1,4 @@
-﻿# CGSApple Instant demo — Tailscale + AR fix (2026-07-21)
+﻿# GGSApple Instant demo — Tailscale + AR fix (2026-07-21)
 
 ## Install
 1. Tailscale on both phones (same account as Homelab)
