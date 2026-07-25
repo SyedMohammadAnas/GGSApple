@@ -144,7 +144,7 @@ struct SoloARContainer: UIViewRepresentable {
         Coordinator(viewModel: viewModel)
     }
 
-    @MainActor
+    /// Not @MainActor — holding ARFrames across MainActor hops stalls the camera.
     final class Coordinator: NSObject, ARSessionDelegate {
         let viewModel: SoloARViewModel
         weak var arView: ARView?
@@ -154,8 +154,11 @@ struct SoloARContainer: UIViewRepresentable {
             self.viewModel = viewModel
         }
 
-        func session(_ session: ARSession, didUpdate frame: ARFrame) {
-            viewModel.updateTracking(frame.camera.trackingState)
+        func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
+            let state = camera.trackingState
+            DispatchQueue.main.async { [weak self] in
+                self?.viewModel.updateTracking(state)
+            }
         }
 
         func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
@@ -165,7 +168,10 @@ struct SoloARContainer: UIViewRepresentable {
                     print("[SoloAR] plane added id=\(plane.identifier) alignment=\(plane.alignment.rawValue)")
                 }
             }
-            viewModel.updatePlaneCount(knownPlaneIds.count)
+            let count = knownPlaneIds.count
+            DispatchQueue.main.async { [weak self] in
+                self?.viewModel.updatePlaneCount(count)
+            }
         }
 
         func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
@@ -174,12 +180,18 @@ struct SoloARContainer: UIViewRepresentable {
                     knownPlaneIds.remove(plane.identifier)
                 }
             }
-            viewModel.updatePlaneCount(knownPlaneIds.count)
+            let count = knownPlaneIds.count
+            DispatchQueue.main.async { [weak self] in
+                self?.viewModel.updatePlaneCount(count)
+            }
         }
 
         func session(_ session: ARSession, didFailWithError error: Error) {
-            print("[SoloAR] session FAILED: \(error.localizedDescription)")
-            viewModel.markFailed(error.localizedDescription)
+            let message = error.localizedDescription
+            print("[SoloAR] session FAILED: \(message)")
+            DispatchQueue.main.async { [weak self] in
+                self?.viewModel.markFailed(message)
+            }
         }
 
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {

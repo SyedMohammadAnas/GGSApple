@@ -68,6 +68,11 @@ struct OfflineAssistSessionView: View {
         .onAppear {
             print("[OfflineAssist] opened — surface-normal arrows + per-hit freehand ink")
         }
+        .onDisappear {
+            // Drop session + delegate so camera/FigCapture teardown is clean on dismiss.
+            viewModel.worldBridge?.teardownARSession()
+            print("[OfflineAssist] dismissed — AR session paused")
+        }
     }
 
     private var topBar: some View {
@@ -294,14 +299,22 @@ final class OfflineWorldBridge: NSObject {
 
     /// Thin ink; keep entity count low to avoid jetsam during draw.
     private let highlighterRadius: Float = 0.0018
-    private let highlighterSampleSpacing: Float = 0.01
-    private let maxStrokePoints = 48
+    private let highlighterSampleSpacing: Float = 0.014
+    private let maxStrokePoints = 36
     /// Sit just above the plane along its normal (matches arrow tip offset).
     private let surfaceLift: Float = 0.002
     /// Reject samples that leave the locked plane (meters).
     private let planeStickTolerance: Float = 0.03
 
     var annotationCount: Int { markers.count }
+
+    /// Pause AR + clear delegate so frames and FigCapture are released on leave.
+    func teardownARSession() {
+        guard let arView else { return }
+        arView.session.pause()
+        arView.session.delegate = nil
+        print("[OfflineAssist] teardown — session paused, delegate cleared")
+    }
 
     func undo() {
         guard let last = markers.popLast() else { return }
@@ -353,7 +366,7 @@ final class OfflineWorldBridge: NSObject {
         let start = worldPosition(hit)
         draftWorldPoints = [start]
 
-        // Bead at start — identical transform path as arrows.
+        // Start bead only (segments carry the stroke — avoids ~2× AnchorEntity count / jetsam).
         let bead = makeInkBeadAnchor(hit: hit)
         arView.scene.addAnchor(bead)
         draftAnchors.append(bead)
@@ -372,12 +385,7 @@ final class OfflineWorldBridge: NSObject {
 
         draftWorldPoints.append(point)
 
-        // Bead on this hit (same as arrow tip placement).
-        let bead = makeInkBeadAnchor(hit: hit)
-        arView.scene.addAnchor(bead)
-        draftAnchors.append(bead)
-
-        // Connector between last and this world point.
+        // Segments only — same world-hit placement path as arrows, fewer entities.
         if let segment = makeInkSegmentAnchor(from: last, to: point) {
             arView.scene.addAnchor(segment)
             draftAnchors.append(segment)
@@ -618,19 +626,27 @@ struct OfflineARContainer: UIViewRepresentable {
         viewModel.worldBridge = context.coordinator.bridge
     }
 
+    static func dismantleUIView(_ uiView: ARView, coordinator: Coordinator) {
+        uiView.session.pause()
+        uiView.session.delegate = nil
+        coordinator.bridge = nil
+        coordinator.arView = nil
+        print("[OfflineAssist] dismantleUIView — session paused")
+    }
+
     func makeCoordinator() -> Coordinator {
         Coordinator(viewModel: viewModel)
     }
 
-    /// Not @MainActor — ARSessionDelegate must return quickly without retaining ARFrames.
+    /// Not @MainActor — never touch `ARFrame` here (retaining frames stalls the camera).
     final class Coordinator: NSObject, ARSessionDelegate {
         let viewModel: OfflineAssistViewModel
         weak var arView: ARView?
         var bridge: OfflineWorldBridge?
         private var planeIds = Set<UUID>()
         private var wasPaused = false
-        private var frameTick = 0
         private var lastReportedPlaneCount = -1
+        private var lastTrackingNormal: Bool?
 
         init(viewModel: OfflineAssistViewModel) {
             self.viewModel = viewModel
@@ -680,20 +696,18 @@ struct OfflineARContainer: UIViewRepresentable {
             }
         }
 
-        func session(_ session: ARSession, didUpdate frame: ARFrame) {
-            // Copy ONLY scalars — never hop to MainActor while still holding `frame`.
+        /// Tracking updates without receiving `ARFrame` — fixes "retaining N ARFrames".
+        func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
             let isNormal: Bool
-            if case .normal = frame.camera.trackingState {
+            if case .normal = camera.trackingState {
                 isNormal = true
             } else {
                 isNormal = false
             }
-            frameTick += 1
-            // Throttle UI updates so MainActor isn't flooded (was retaining ARFrames).
-            guard frameTick % 20 == 0 else { return }
-            let normal = isNormal
+            guard lastTrackingNormal != isNormal else { return }
+            lastTrackingNormal = isNormal
             DispatchQueue.main.async { [weak self] in
-                self?.viewModel.trackingNormal = normal
+                self?.viewModel.trackingNormal = isNormal
             }
         }
 

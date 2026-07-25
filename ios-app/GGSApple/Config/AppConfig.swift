@@ -15,9 +15,9 @@ enum AppConfig {
     // MARK: - Google OAuth (iOS client)
 
     static let googleIOSClientID =
-        "664161950009-lne9cs39aileaqhiprj3b47riekgap12.apps.googleusercontent.com"
+        "664161950009-jik3hu1hkgfosc83i4v3oplporpbk0br.apps.googleusercontent.com"
     static let googleReversedClientID =
-        "com.googleusercontent.apps.664161950009-lne9cs39aileaqhiprj3b47riekgap12"
+        "com.googleusercontent.apps.664161950009-jik3hu1hkgfosc83i4v3oplporpbk0br"
 
     // MARK: - Defaults: iMac Lab Tailscale Docker (2026-07-23)
 
