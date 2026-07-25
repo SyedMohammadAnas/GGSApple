@@ -66,6 +66,7 @@ struct OfflineAssistSessionView: View {
                 .presentationDetents([.medium, .large])
         }
         .onAppear {
+            // Locked approach (vault 2026-07-24): per-hit world anchors — same as arrows.
             print("[OfflineAssist] opened — surface-normal arrows + per-hit freehand ink")
         }
         .onDisappear {
@@ -269,7 +270,7 @@ final class OfflineAssistViewModel {
 
 // MARK: - World bridge
 
-/// Freehand = light unlit ink segments stuck on planes (not fancy lit 3D).
+/// Freehand = per-hit world anchors (same path as arrows) — locked 2026-07-24.
 /// Arrow = flat unlit mark perpendicular to surface.
 /// Pointer = screen-space UI only.
 @MainActor
@@ -297,13 +298,15 @@ final class OfflineWorldBridge: NSObject {
     private let markerColor = UIColor(red: 1.0, green: 0.48, blue: 0.0, alpha: 1.0)
     private let highlighterColor = UIColor(red: 1.0, green: 0.75, blue: 0.1, alpha: 0.95)
 
-    /// Thin ink; keep entity count low to avoid jetsam during draw.
-    private let highlighterRadius: Float = 0.0018
-    private let highlighterSampleSpacing: Float = 0.014
-    private let maxStrokePoints = 36
+    /// Thin ink; segments carry the stroke (no visible joint beads).
+    private let highlighterRadius: Float = 0.0024
+    private let highlighterSampleSpacing: Float = 0.01
+    private let maxStrokePoints = 48
+    /// Slight segment overlap so joints look continuous without bead spheres.
+    private let segmentOverlap: Float = 1.12
     /// Sit just above the plane along its normal (matches arrow tip offset).
     private let surfaceLift: Float = 0.002
-    /// Reject samples that leave the locked plane (meters).
+    /// Reject samples that leave the locked plane (meters) when plane ID is missing.
     private let planeStickTolerance: Float = 0.03
 
     var annotationCount: Int { markers.count }
@@ -349,27 +352,21 @@ final class OfflineWorldBridge: NSObject {
         print("[OfflineAssist] placed surface-normal arrow #\(number)")
     }
 
-    // MARK: Highlighter — arrow-identical placement (per-hit AnchorEntity)
+    // MARK: Highlighter — per-hit world (locked 2026-07-24)
 
-    /// Different approach from plane-local / ray∩plane: every sample is placed the
-    /// same way as an arrow tip — `AnchorEntity(world: hit.worldTransform)` + local lift.
-    /// Segments are also their own world anchors at the midpoint. No coordinate conversion.
+    /// Do NOT use plane-local conversion — that made ink land elsewhere / vanish.
+    /// Samples still come from `ARView.raycast` (same as arrows). Visible ink is
+    /// overlapping segment boxes only — joint beads stay hidden for a clean stroke.
     func beginHighlighter(at screen: CGPoint) {
         discardDraft()
-        guard let hit = inkHit(screen, locking: true), let arView else {
+        guard let hit = inkHit(screen, locking: true) else {
             print("[OfflineAssist] highlighter begin miss")
             return
         }
 
         draftPlaneID = (hit.anchor as? ARPlaneAnchor)?.identifier
         draftPlaneTransform = hit.worldTransform
-        let start = worldPosition(hit)
-        draftWorldPoints = [start]
-
-        // Start bead only (segments carry the stroke — avoids ~2× AnchorEntity count / jetsam).
-        let bead = makeInkBeadAnchor(hit: hit)
-        arView.scene.addAnchor(bead)
-        draftAnchors.append(bead)
+        draftWorldPoints = [worldPosition(hit)]
         print("[OfflineAssist] highlighter locked planeID=\(draftPlaneID?.uuidString.prefix(8) ?? "est")")
     }
 
@@ -385,7 +382,7 @@ final class OfflineWorldBridge: NSObject {
 
         draftWorldPoints.append(point)
 
-        // Segments only — same world-hit placement path as arrows, fewer entities.
+        // Segment only — no joint bead spheres (keeps stroke looking clean).
         if let segment = makeInkSegmentAnchor(from: last, to: point) {
             arView.scene.addAnchor(segment)
             draftAnchors.append(segment)
@@ -398,7 +395,7 @@ final class OfflineWorldBridge: NSObject {
             return
         }
         markers.append(MarkerGroup(anchors: draftAnchors))
-        print("[OfflineAssist] ink stroke points=\(draftWorldPoints.count) anchors=\(draftAnchors.count) (per-hit world)")
+        print("[OfflineAssist] ink stroke points=\(draftWorldPoints.count) anchors=\(draftAnchors.count) (per-hit world, segments-only)")
         draftAnchors = []
         draftPlaneID = nil
         draftPlaneTransform = nil
@@ -413,40 +410,27 @@ final class OfflineWorldBridge: NSObject {
         draftWorldPoints = []
     }
 
-    /// Tiny sphere parented exactly like an arrow tip.
-    private func makeInkBeadAnchor(hit: ARRaycastResult) -> AnchorEntity {
-        let anchor = AnchorEntity(world: hit.worldTransform)
-        let bead = ModelEntity(
-            mesh: .generateSphere(radius: highlighterRadius * 1.4),
-            materials: [UnlitMaterial(color: highlighterColor)]
-        )
-        bead.position = SIMD3<Float>(0, surfaceLift, 0)
-        anchor.addChild(bead)
-        return anchor
-    }
-
-    /// Segment between two world points — own `AnchorEntity` at midpoint (arrow-style).
+    /// Segment between two world points — own AnchorEntity at lifted midpoint.
     private func makeInkSegmentAnchor(from: SIMD3<Float>, to: SIMD3<Float>) -> AnchorEntity? {
         let delta = to - from
         let dist = length(delta)
         guard dist > 0.0005 else { return nil }
 
         let mid = (from + to) / 2
-        // Lift midpoint along locked plane normal so the stroke sits above the surface.
         let liftedMid = mid + lockedPlaneNormal() * surfaceLift
         var transform = matrix_identity_float4x4
         transform.columns.3 = SIMD4(liftedMid.x, liftedMid.y, liftedMid.z, 1)
 
         let anchor = AnchorEntity(world: transform)
+        // Overlap neighbors slightly so joints look continuous without bead spheres.
         let mesh = MeshResource.generateBox(
             width: highlighterRadius * 2,
             height: highlighterRadius * 2,
-            depth: dist
+            depth: dist * segmentOverlap
         )
         let entity = ModelEntity(mesh: mesh, materials: [UnlitMaterial(color: highlighterColor)])
-        // Aim box depth (-Z) along the stroke in the anchor’s local/world-aligned space.
-        let dir = normalize(delta)
-        entity.look(at: dir, from: .zero, relativeTo: anchor)
+        // Align box -Z with stroke. Avoid look(at: direction) — that API expects a point.
+        entity.orientation = orientationAligningNegativeZ(to: normalize(delta))
         anchor.addChild(entity)
         return anchor
     }
@@ -460,6 +444,20 @@ final class OfflineWorldBridge: NSObject {
             plane.columns.1.y,
             plane.columns.1.z
         ))
+    }
+
+    /// Quaternion that rotates the box’s default forward (-Z) onto `direction`.
+    private func orientationAligningNegativeZ(to direction: SIMD3<Float>) -> simd_quatf {
+        let forward = normalize(direction)
+        let defaultForward = SIMD3<Float>(0, 0, -1)
+        let d = simd_dot(defaultForward, forward)
+        if d > 0.9999 {
+            return simd_quatf(ix: 0, iy: 0, iz: 0, r: 1)
+        }
+        if d < -0.9999 {
+            return simd_quatf(angle: .pi, axis: SIMD3<Float>(0, 1, 0))
+        }
+        return simd_quatf(from: defaultForward, to: forward)
     }
 
     // MARK: Hits
@@ -489,6 +487,7 @@ final class OfflineWorldBridge: NSObject {
         }
 
         if let planeID = draftPlaneID {
+            // Stay on the locked ARPlaneAnchor only (accepted freehand behavior).
             if let match = ordered.first(where: { ($0.anchor as? ARPlaneAnchor)?.identifier == planeID }) {
                 return match
             }
@@ -638,7 +637,9 @@ struct OfflineARContainer: UIViewRepresentable {
         Coordinator(viewModel: viewModel)
     }
 
-    /// Not @MainActor — never touch `ARFrame` here (retaining frames stalls the camera).
+    /// @MainActor so UIKit taps/pans call the bridge synchronously (no Task reorder on draw).
+    /// ARSession callbacks stay `nonisolated` and only hop scalar state — never ARFrames.
+    @MainActor
     final class Coordinator: NSObject, ARSessionDelegate {
         let viewModel: OfflineAssistViewModel
         weak var arView: ARView?
@@ -663,79 +664,69 @@ struct OfflineARContainer: UIViewRepresentable {
         }
 
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
-            // UIKit gestures arrive on the main thread — avoid Task queues that retain work.
-            guard Thread.isMainThread, let arView else { return }
+            guard let arView, !viewModel.isVideoPaused else { return }
             let point = gesture.location(in: arView)
-            MainActor.assumeIsolated {
-                guard !viewModel.isVideoPaused else { return }
-                if viewModel.selectedTool == .arrow {
-                    bridge?.placeArrow(at: point)
-                    viewModel.annotationCount = bridge?.annotationCount ?? 0
-                }
+            if viewModel.selectedTool == .arrow {
+                bridge?.placeArrow(at: point)
+                viewModel.annotationCount = bridge?.annotationCount ?? 0
             }
         }
 
         @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
-            guard Thread.isMainThread, let arView else { return }
+            guard let arView, !viewModel.isVideoPaused else { return }
+            guard viewModel.selectedTool == .freehand else { return }
             let point = gesture.location(in: arView)
-            let state = gesture.state
-            MainActor.assumeIsolated {
-                guard !viewModel.isVideoPaused else { return }
-                guard viewModel.selectedTool == .freehand else { return }
-                switch state {
-                case .began:
-                    bridge?.beginHighlighter(at: point)
-                case .changed:
-                    bridge?.moveHighlighter(to: point)
-                case .ended, .cancelled:
-                    bridge?.endHighlighter()
-                    viewModel.annotationCount = bridge?.annotationCount ?? 0
-                default:
-                    break
-                }
+            switch gesture.state {
+            case .began:
+                bridge?.beginHighlighter(at: point)
+            case .changed:
+                bridge?.moveHighlighter(to: point)
+            case .ended, .cancelled:
+                bridge?.endHighlighter()
+                viewModel.annotationCount = bridge?.annotationCount ?? 0
+            default:
+                break
             }
         }
 
         /// Tracking updates without receiving `ARFrame` — fixes "retaining N ARFrames".
-        func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
+        nonisolated func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
             let isNormal: Bool
             if case .normal = camera.trackingState {
                 isNormal = true
             } else {
                 isNormal = false
             }
-            guard lastTrackingNormal != isNormal else { return }
-            lastTrackingNormal = isNormal
-            DispatchQueue.main.async { [weak self] in
-                self?.viewModel.trackingNormal = isNormal
+            Task { @MainActor [weak self] in
+                guard let self, self.lastTrackingNormal != isNormal else { return }
+                self.lastTrackingNormal = isNormal
+                self.viewModel.trackingNormal = isNormal
             }
         }
 
-        func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
-            for anchor in anchors {
-                if let plane = anchor as? ARPlaneAnchor {
-                    planeIds.insert(plane.identifier)
-                }
+        nonisolated func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
+            let added = anchors.compactMap { ($0 as? ARPlaneAnchor)?.identifier }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                for id in added { self.planeIds.insert(id) }
+                self.publishPlaneCountIfNeeded()
             }
-            publishPlaneCountIfNeeded()
         }
 
-        func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
-            for anchor in anchors {
-                if let plane = anchor as? ARPlaneAnchor {
-                    planeIds.remove(plane.identifier)
-                }
+        nonisolated func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
+            let removed = anchors.compactMap { ($0 as? ARPlaneAnchor)?.identifier }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                for id in removed { self.planeIds.remove(id) }
+                self.publishPlaneCountIfNeeded()
             }
-            publishPlaneCountIfNeeded()
         }
 
         private func publishPlaneCountIfNeeded() {
             let count = planeIds.count
             guard count != lastReportedPlaneCount else { return }
             lastReportedPlaneCount = count
-            DispatchQueue.main.async { [weak self] in
-                self?.viewModel.planeCount = count
-            }
+            viewModel.planeCount = count
         }
     }
 }

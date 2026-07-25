@@ -52,8 +52,12 @@ final class LiveKitManager: NSObject, ObservableObject {
     func toggleMute() {
         isMuted.toggle()
         Task {
-            try? await room.localParticipant.setMicrophone(enabled: !isMuted)
-            print("[LiveKit] mute=\(isMuted)")
+            do {
+                try await room.localParticipant.setMicrophone(enabled: !isMuted)
+                print("[LiveKit] mute=\(isMuted)")
+            } catch {
+                print("[LiveKit] mute error: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -66,11 +70,15 @@ final class LiveKitManager: NSObject, ObservableObject {
     func toggleVideoPaused() {
         isVideoPaused.toggle()
         Task {
-            try? await room.localParticipant.setCamera(enabled: !isVideoPaused)
-            if !isVideoPaused {
-                refreshLocalVideo()
+            do {
+                try await room.localParticipant.setCamera(enabled: !isVideoPaused)
+                if !isVideoPaused {
+                    refreshLocalVideo()
+                }
+                print("[LiveKit] videoPaused=\(isVideoPaused)")
+            } catch {
+                print("[LiveKit] video toggle error: \(error.localizedDescription)")
             }
-            print("[LiveKit] videoPaused=\(isVideoPaused)")
         }
     }
 
@@ -86,10 +94,11 @@ final class LiveKitManager: NSObject, ObservableObject {
         #if os(iOS)
         let session = AVAudioSession.sharedInstance()
         do {
+            // allowBluetooth is deprecated — use HFP (calls) + A2DP (media) explicitly.
             try session.setCategory(
                 .playAndRecord,
                 mode: .videoChat,
-                options: [.defaultToSpeaker, .allowBluetooth]
+                options: [.defaultToSpeaker, .allowBluetoothHFP, .allowBluetoothA2DP]
             )
             try session.overrideOutputAudioPort(isSpeakerOn ? .speaker : .none)
             try session.setActive(true)

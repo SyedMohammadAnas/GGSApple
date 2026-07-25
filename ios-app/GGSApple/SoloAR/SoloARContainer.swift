@@ -144,7 +144,9 @@ struct SoloARContainer: UIViewRepresentable {
         Coordinator(viewModel: viewModel)
     }
 
-    /// Not @MainActor — holding ARFrames across MainActor hops stalls the camera.
+    /// @MainActor for ViewModel + gestures. Session callbacks are `nonisolated`
+    /// and only hop scalar state — never hold an `ARFrame`.
+    @MainActor
     final class Coordinator: NSObject, ARSessionDelegate {
         let viewModel: SoloARViewModel
         weak var arView: ARView?
@@ -154,42 +156,44 @@ struct SoloARContainer: UIViewRepresentable {
             self.viewModel = viewModel
         }
 
-        func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
+        nonisolated func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
+            // Copy scalar state only — never hop while holding an ARFrame.
             let state = camera.trackingState
-            DispatchQueue.main.async { [weak self] in
+            Task { @MainActor [weak self] in
                 self?.viewModel.updateTracking(state)
             }
         }
 
-        func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
+        nonisolated func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
+            var added: [(UUID, Int)] = []
             for anchor in anchors {
                 if let plane = anchor as? ARPlaneAnchor {
-                    knownPlaneIds.insert(plane.identifier)
-                    print("[SoloAR] plane added id=\(plane.identifier) alignment=\(plane.alignment.rawValue)")
+                    added.append((plane.identifier, plane.alignment.rawValue))
                 }
             }
-            let count = knownPlaneIds.count
-            DispatchQueue.main.async { [weak self] in
-                self?.viewModel.updatePlaneCount(count)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                for (id, alignment) in added {
+                    self.knownPlaneIds.insert(id)
+                    print("[SoloAR] plane added id=\(id) alignment=\(alignment)")
+                }
+                self.viewModel.updatePlaneCount(self.knownPlaneIds.count)
             }
         }
 
-        func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
-            for anchor in anchors {
-                if let plane = anchor as? ARPlaneAnchor {
-                    knownPlaneIds.remove(plane.identifier)
-                }
-            }
-            let count = knownPlaneIds.count
-            DispatchQueue.main.async { [weak self] in
-                self?.viewModel.updatePlaneCount(count)
+        nonisolated func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
+            let removed = anchors.compactMap { ($0 as? ARPlaneAnchor)?.identifier }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                for id in removed { self.knownPlaneIds.remove(id) }
+                self.viewModel.updatePlaneCount(self.knownPlaneIds.count)
             }
         }
 
-        func session(_ session: ARSession, didFailWithError error: Error) {
+        nonisolated func session(_ session: ARSession, didFailWithError error: Error) {
             let message = error.localizedDescription
             print("[SoloAR] session FAILED: \(message)")
-            DispatchQueue.main.async { [weak self] in
+            Task { @MainActor [weak self] in
                 self?.viewModel.markFailed(message)
             }
         }
@@ -200,7 +204,6 @@ struct SoloARContainer: UIViewRepresentable {
                 print("[SoloAR] tap ignored — not ready")
                 return
             }
-
             let location = gesture.location(in: arView)
 
             // Prefer plane raycast so markers stick in world space.
