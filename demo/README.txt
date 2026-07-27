@@ -1,19 +1,20 @@
-﻿# GGSApple Instant demo — Tailscale + AR fix (2026-07-21)
+﻿# GGSApple Instant demo — customer app (2026-07-27)
 
 ## Install
-1. Tailscale on both phones (same account as Homelab)
-2. Uninstall old Instant if present
-3. Install demo\app-instant-debug.apk
-4. On customer phone: install/update "Google Play Services for AR" if Play Store opens
-5. Confirm http://100.70.151.71:3000/health
+1. Uninstall old packages if present:
+   - `adb uninstall com.ggsapple.remotear.instant`
+   - `adb uninstall com.ggsapple.remotear`
+2. From repo: `cd android-app && .\gradlew installDebug`
+3. Or install a staged APK from `demo/` when refreshed
+4. Customer phone: install/update "Google Play Services for AR" if prompted
 
-## Roles
-- Customer (field) = AR mode — toggle Customer on home
-- Expert = remote video only (no AR by design)
+## Product shape
+- Instant = **customer only** (share public ID, wait for web expert)
+- Expert = **browser** (`https://ggsexpert.vercel.app`)
+- No Customer/Expert toggle on the phone
 
-## Baked URLs
-- Supabase cloud + API http://100.70.151.71:3000 + LiveKit ws://100.70.151.71:7880
-
-## AR fix in this build
-Previous APK treated ARCore INSTALL_REQUESTED as unsupported and forced video fallback.
-This build waits for Play Services for AR install, then resumes AR on return.
+## Baked / default URLs (override in Debug backend URL)
+- API: `https://ggsexpert.vercel.app`
+- LiveKit: `wss://server-laptop-anassyed.tail3bc01f.ts.net:7880` (Homelab Tailscale Serve)
+- Auth/data: cloud Supabase
+- Requires Tailscale on phone + Homelab awake with LiveKit Docker

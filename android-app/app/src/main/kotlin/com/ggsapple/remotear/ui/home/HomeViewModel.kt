@@ -2,34 +2,29 @@ package com.ggsapple.remotear.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.ggsapple.remotear.data.local.AppMode
-import com.ggsapple.remotear.data.local.AppModeStore
 import com.ggsapple.remotear.data.local.CacheClearManager
 import com.ggsapple.remotear.data.model.ActiveSession
 import com.ggsapple.remotear.data.model.Profile
 import com.ggsapple.remotear.data.model.SessionApiException
-import com.ggsapple.remotear.data.model.SessionStatus
 import com.ggsapple.remotear.data.repository.RuntimeConfigRepository
 import com.ggsapple.remotear.data.repository.SessionRepository
 import com.ggsapple.remotear.util.PublicIdFormatter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class HomeUiState(
     val profile: Profile? = null,
-    val appMode: AppMode = AppMode.CUSTOMER,
     val formattedPublicId: String = "—",
-    val expertIdInput: String = "",
     val isLoading: Boolean = false,
-    val isEnsuringSession: Boolean = false,
     val errorMessage: String? = null,
-    val joinedSession: ActiveSession? = null,
     val navigateToCustomerCall: ActiveSession? = null,
     val incomingSession: Boolean = false,
     val showDebugSheet: Boolean = false,
@@ -39,10 +34,13 @@ data class HomeUiState(
     val cacheClearMessage: String? = null,
 )
 
+/**
+ * Customer-only Instant home.
+ * Polls POST /api/sessions/customer-enter until expert-web activates a session.
+ */
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val sessionRepository: SessionRepository,
-    private val appModeStore: AppModeStore,
     private val runtimeConfigRepository: RuntimeConfigRepository,
     private val cacheClearManager: CacheClearManager,
 ) : ViewModel() {
@@ -50,8 +48,7 @@ class HomeViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
-    private var customerSession: ActiveSession? = null
-    private var sessionPollJob: Job? = null
+    private var customerWatcherJob: Job? = null
 
     fun bindProfile(profile: Profile) {
         _uiState.update {
@@ -60,22 +57,10 @@ class HomeViewModel @Inject constructor(
                 formattedPublicId = PublicIdFormatter.formatDisplay(profile.publicId),
             )
         }
-        if (_uiState.value.appMode == AppMode.CUSTOMER) {
-            ensureCustomerWaitingSession()
-        }
+        startCustomerWatcher()
     }
 
     init {
-        viewModelScope.launch {
-            appModeStore.mode.collect { mode ->
-                _uiState.update { it.copy(appMode = mode, incomingSession = false) }
-                if (mode == AppMode.CUSTOMER) {
-                    ensureCustomerWaitingSession()
-                } else {
-                    stopSessionPolling()
-                }
-            }
-        }
         viewModelScope.launch {
             runtimeConfigRepository.apiUrlOverride.collect { override ->
                 _uiState.update { it.copy(debugApiUrl = override.orEmpty()) }
@@ -88,76 +73,13 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun setAppMode(mode: AppMode) {
-        viewModelScope.launch {
-            appModeStore.setMode(mode)
-        }
-    }
-
-    fun onExpertIdChange(value: String) {
-        val digits = value.filter { it.isDigit() }.take(11)
-        _uiState.update { it.copy(expertIdInput = digits, errorMessage = null) }
-    }
-
-    fun pasteExpertId(text: String) {
-        onExpertIdChange(PublicIdFormatter.normalize(text))
-    }
-
-    /** Ensures a waiting session exists so experts can join while the customer stays on home. */
-    fun ensureCustomerWaitingSession() {
-        if (_uiState.value.appMode != AppMode.CUSTOMER || customerSession != null || _uiState.value.isEnsuringSession) {
-            return
-        }
-        viewModelScope.launch {
-            _uiState.update { it.copy(isEnsuringSession = true, errorMessage = null) }
-            sessionRepository.createSession()
-                .onSuccess { session ->
-                    customerSession = session
-                    _uiState.update { it.copy(isEnsuringSession = false) }
-                    startSessionPolling(session)
-                }
-                .onFailure { error ->
-                    _uiState.update {
-                        it.copy(
-                            isEnsuringSession = false,
-                            errorMessage = error.message ?: "Failed to prepare session",
-                        )
-                    }
-                }
-        }
-    }
-
     fun shareId() {
-        if (_uiState.value.appMode != AppMode.CUSTOMER) return
-        if (customerSession == null) {
-            ensureCustomerWaitingSession()
-        }
-    }
-
-    fun joinSessionById() {
-        val id = _uiState.value.expertIdInput
-        if (!PublicIdFormatter.isValid(id) || _uiState.value.isLoading) return
-
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            sessionRepository.joinSessionByPublicId(id)
-                .onSuccess { session ->
-                    _uiState.update { it.copy(isLoading = false, joinedSession = session) }
-                }
-                .onFailure { error ->
-                    val message = when (error) {
-                        is SessionApiException -> error.errorMessage
-                        else -> error.message ?: "Failed to join session"
-                    }
-                    _uiState.update { it.copy(isLoading = false, errorMessage = message) }
-                }
-        }
+        // Share intent is fired from the UI; nothing to prepare server-side.
     }
 
     fun clearNavigation() {
         _uiState.update {
             it.copy(
-                joinedSession = null,
                 navigateToCustomerCall = null,
                 incomingSession = false,
             )
@@ -195,7 +117,14 @@ class HomeViewModel @Inject constructor(
     }
 
     fun openDebugSheet() {
-        _uiState.update { it.copy(showDebugSheet = true) }
+        // Prefill with effective URLs so a stale iMac bake-in is visible immediately.
+        _uiState.update {
+            it.copy(
+                showDebugSheet = true,
+                debugApiUrl = it.debugApiUrl.ifBlank { runtimeConfigRepository.apiUrlBlocking() },
+                debugLivekitUrl = it.debugLivekitUrl.ifBlank { runtimeConfigRepository.livekitUrlBlocking() },
+            )
+        }
     }
 
     fun dismissDebugSheet() {
@@ -223,39 +152,72 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             runtimeConfigRepository.setApiUrlOverride(null)
             runtimeConfigRepository.setLivekitUrlOverride(null)
-            _uiState.update { it.copy(debugApiUrl = "", debugLivekitUrl = "", showDebugSheet = false) }
-        }
-    }
-
-    private fun startSessionPolling(session: ActiveSession) {
-        stopSessionPolling()
-        sessionPollJob = viewModelScope.launch {
-            sessionRepository.observeSessionStatus(session.sessionId).collect { status ->
-                when (status) {
-                    SessionStatus.ACTIVE -> {
-                        _uiState.update { it.copy(incomingSession = true) }
-                        _uiState.update {
-                            it.copy(navigateToCustomerCall = session)
-                        }
-                    }
-                    SessionStatus.ENDED -> {
-                        customerSession = null
-                        _uiState.update { it.copy(incomingSession = false) }
-                        ensureCustomerWaitingSession()
-                    }
-                    SessionStatus.WAITING -> Unit
-                }
+            _uiState.update {
+                it.copy(
+                    // After clearing overrides, show the baked Homelab/Vercel defaults.
+                    debugApiUrl = runtimeConfigRepository.apiUrlBlocking(),
+                    debugLivekitUrl = runtimeConfigRepository.livekitUrlBlocking(),
+                    showDebugSheet = false,
+                )
             }
         }
     }
 
-    private fun stopSessionPolling() {
-        sessionPollJob?.cancel()
-        sessionPollJob = null
+    /** Resume watcher after returning from a call or tutorial. */
+    fun resumeCustomerWatcher() {
+        if (_uiState.value.navigateToCustomerCall == null) {
+            startCustomerWatcher()
+        }
+    }
+
+    private fun startCustomerWatcher() {
+        customerWatcherJob?.cancel()
+        customerWatcherJob = viewModelScope.launch {
+            while (isActive) {
+                // Skip while already navigating into a call.
+                if (_uiState.value.navigateToCustomerCall == null && !_uiState.value.incomingSession) {
+                    pollCustomerEnter()
+                }
+                delay(CUSTOMER_ENTER_POLL_MS)
+            }
+        }
+    }
+
+    private suspend fun pollCustomerEnter() {
+        sessionRepository.customerEnter()
+            .onSuccess { session ->
+                android.util.Log.i(TAG, "incoming active session ${session.sessionId}")
+                _uiState.update { it.copy(incomingSession = true, errorMessage = null) }
+                // Brief "incoming" cue, then enter the call (matches iOS prompt timing).
+                delay(1_200)
+                _uiState.update { it.copy(navigateToCustomerCall = session) }
+                customerWatcherJob?.cancel()
+            }
+            .onFailure { error ->
+                // 404 = no active session yet — expected while waiting for expert-web.
+                val code = (error as? SessionApiException)?.statusCode ?: 0
+                if (code != 404 && code != 0) {
+                    android.util.Log.w(TAG, "customer-enter failed: ${error.message}")
+                }
+                // Network errors (code 0): surface once, keep polling.
+                if (code == 0 && error is SessionApiException) {
+                    _uiState.update { it.copy(errorMessage = error.errorMessage) }
+                }
+            }
+    }
+
+    private fun stopCustomerWatcher() {
+        customerWatcherJob?.cancel()
+        customerWatcherJob = null
     }
 
     override fun onCleared() {
-        stopSessionPolling()
+        stopCustomerWatcher()
         super.onCleared()
+    }
+
+    companion object {
+        private const val TAG = "HomeViewModel"
+        private const val CUSTOMER_ENTER_POLL_MS = 2_500L
     }
 }

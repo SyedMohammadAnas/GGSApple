@@ -30,10 +30,24 @@ android {
         versionCode = 1
         versionName = "0.1.0"
 
-        buildConfigField("String", "SUPABASE_URL", "\"${localProp("SUPABASE_URL")}\"")
+        // Lab defaults: Vercel expert-web + Homelab LiveKit Tailscale Serve WSS (2026-07-27).
+        // Override in local.properties or the in-app debug sheet.
+        buildConfigField(
+            "String",
+            "SUPABASE_URL",
+            "\"${localProp("SUPABASE_URL", "https://suuellchcoegerddqyjb.supabase.co")}\"",
+        )
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${localProp("SUPABASE_ANON_KEY")}\"")
-        buildConfigField("String", "LIVEKIT_URL", "\"${localProp("LIVEKIT_URL")}\"")
-        buildConfigField("String", "API_URL", "\"${localProp("API_URL")}\"")
+        buildConfigField(
+            "String",
+            "LIVEKIT_URL",
+            "\"${localProp("LIVEKIT_URL", "wss://server-laptop-anassyed.tail3bc01f.ts.net:7880")}\"",
+        )
+        buildConfigField(
+            "String",
+            "API_URL",
+            "\"${localProp("API_URL", "https://ggsexpert.vercel.app")}\"",
+        )
     }
 
     buildTypes {
@@ -51,18 +65,7 @@ android {
         }
     }
 
-    flavorDimensions += "tier"
-    productFlavors {
-        create("master") {
-            dimension = "tier"
-            buildConfigField("boolean", "IS_PREMIUM", "true")
-        }
-        create("instant") {
-            dimension = "tier"
-            applicationIdSuffix = ".instant"
-            buildConfigField("boolean", "IS_PREMIUM", "false")
-        }
-    }
+    // Single Instant customer app — no Instant/Master flavor split (2026-07-25 philosophy).
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

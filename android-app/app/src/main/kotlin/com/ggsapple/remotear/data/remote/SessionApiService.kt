@@ -1,15 +1,12 @@
 package com.ggsapple.remotear.data.remote
 
 import com.ggsapple.remotear.data.model.ApiErrorResponse
-import com.ggsapple.remotear.data.model.CreateSessionResponse
 import com.ggsapple.remotear.data.model.EndSessionResponse
 import com.ggsapple.remotear.data.model.JoinSessionResponse
-import com.ggsapple.remotear.data.model.JoinByPublicIdRequest
 import com.ggsapple.remotear.data.model.SessionDetailResponse
 import com.ggsapple.remotear.data.model.SessionRow
 import com.ggsapple.remotear.data.model.SessionApiException
 import com.ggsapple.remotear.data.repository.RuntimeConfigRepository
-import com.ggsapple.remotear.util.PublicIdFormatter
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.ktor.client.HttpClient
@@ -17,15 +14,16 @@ import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
-import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
-import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
-import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Customer Instant session API.
+ * Expert joins via expert-web; customer claims the room with [customerEnter].
+ */
 @Singleton
 class SessionApiService @Inject constructor(
     private val httpClient: HttpClient,
@@ -35,23 +33,9 @@ class SessionApiService @Inject constructor(
     private val baseUrl: String
         get() = runtimeConfig.apiUrlBlocking()
 
-    suspend fun createSession(): CreateSessionResponse =
-        postJson("$baseUrl/api/sessions")
-
-    suspend fun joinSession(joinCode: String): JoinSessionResponse {
-        val normalized = normalizeJoinCode(joinCode)
-        return postJson("$baseUrl/api/sessions/$normalized/join")
-    }
-
-    suspend fun joinSessionByPublicId(publicId: String): JoinSessionResponse {
-        val normalized = PublicIdFormatter.normalize(publicId)
-        val response = httpClient.post("$baseUrl/api/sessions/join-by-id") {
-            header(HttpHeaders.Authorization, bearerToken())
-            contentType(ContentType.Application.Json)
-            setBody(JoinByPublicIdRequest(targetPublicId = normalized))
-        }
-        return parseResponse(response)
-    }
+    /** Claims LiveKit credentials once an expert has activated a session for this user. */
+    suspend fun customerEnter(): JoinSessionResponse =
+        postJson("$baseUrl/api/sessions/customer-enter")
 
     suspend fun endSession(sessionId: String): EndSessionResponse =
         postJson("$baseUrl/api/sessions/$sessionId/end")
@@ -84,15 +68,5 @@ class SessionApiService @Inject constructor(
             throw SessionApiException(message, response.status.value)
         }
         return response.body()
-    }
-
-    companion object {
-        fun normalizeJoinCode(input: String): String {
-            val cleaned = input.uppercase().filter { it.isLetterOrDigit() }
-            if (cleaned.length != 6) {
-                return input.trim().uppercase()
-            }
-            return "${cleaned.take(3)}-${cleaned.drop(3)}"
-        }
     }
 }

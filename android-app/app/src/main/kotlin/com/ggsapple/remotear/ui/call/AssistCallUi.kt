@@ -348,7 +348,6 @@ fun CallControlBottomSheet(
     modifier: Modifier = Modifier,
     speakerOn: Boolean = true,
     paused: Boolean = false,
-    isPremium: Boolean = com.ggsapple.remotear.BuildConfig.IS_PREMIUM,
 ) {
     val filteredModels = remember(models, assetSearchQuery) {
         if (assetSearchQuery.isBlank()) models
@@ -386,27 +385,23 @@ fun CallControlBottomSheet(
                 .padding(horizontal = 24.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
-            if (isPremium) {
-                CallControlButton(
-                    label = "speaker",
-                    icon = Icons.Outlined.VolumeUp,
-                    active = speakerOn,
-                    onClick = onToggleSpeaker,
-                )
-            }
+            CallControlButton(
+                label = "speaker",
+                icon = Icons.Outlined.VolumeUp,
+                active = speakerOn,
+                onClick = onToggleSpeaker,
+            )
             CallControlButton(
                 label = if (isMuted) "unmute" else "mute",
                 icon = if (isMuted) Icons.Outlined.MicOff else Icons.Outlined.Mic,
                 onClick = onToggleMute,
             )
-            if (isPremium) {
-                CallControlButton(
-                    label = if (paused) "resume" else "pause",
-                    icon = Icons.Outlined.Pause,
-                    active = paused,
-                    onClick = onTogglePause,
-                )
-            }
+            CallControlButton(
+                label = if (paused) "resume" else "pause",
+                icon = Icons.Outlined.Pause,
+                active = paused,
+                onClick = onTogglePause,
+            )
             CallControlButton(
                 label = "end",
                 icon = Icons.Default.Close,

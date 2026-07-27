@@ -1,7 +1,6 @@
 package com.ggsapple.remotear.data.repository
 
 import com.ggsapple.remotear.data.model.ActiveSession
-import com.ggsapple.remotear.data.model.CreateSessionResponse
 import com.ggsapple.remotear.data.model.JoinSessionResponse
 import com.ggsapple.remotear.data.model.SessionApiException
 import com.ggsapple.remotear.data.model.SessionParticipantRole
@@ -20,6 +19,7 @@ import javax.inject.Singleton
 @Singleton
 class SessionRepository @Inject constructor(
     private val sessionApiService: SessionApiService,
+    private val runtimeConfigRepository: RuntimeConfigRepository,
 ) {
     private var cachedActiveSession: ActiveSession? = null
 
@@ -30,34 +30,14 @@ class SessionRepository @Inject constructor(
         cachedActiveSession = null
     }
 
-    suspend fun createSession(): Result<ActiveSession> =
+    /**
+     * Customer Instant: poll until expert-web creates/activates a session for this user,
+     * then claim LiveKit credentials.
+     */
+    suspend fun customerEnter(): Result<ActiveSession> =
         runCatching {
-            val response = sessionApiService.createSession()
+            val response = sessionApiService.customerEnter()
             toActiveSession(response, SessionParticipantRole.CUSTOMER)
-        }.fold(
-            onSuccess = { session ->
-                cachedActiveSession = session
-                Result.success(session)
-            },
-            onFailure = { Result.failure(mapError(it)) },
-        )
-
-    suspend fun joinSession(joinCode: String): Result<ActiveSession> =
-        runCatching {
-            val response = sessionApiService.joinSession(joinCode)
-            toActiveSession(response, SessionParticipantRole.TECHNICIAN)
-        }.fold(
-            onSuccess = { session ->
-                cachedActiveSession = session
-                Result.success(session)
-            },
-            onFailure = { Result.failure(mapError(it)) },
-        )
-
-    suspend fun joinSessionByPublicId(publicId: String): Result<ActiveSession> =
-        runCatching {
-            val response = sessionApiService.joinSessionByPublicId(publicId)
-            toActiveSession(response, SessionParticipantRole.TECHNICIAN)
         }.fold(
             onSuccess = { session ->
                 cachedActiveSession = session
@@ -84,10 +64,6 @@ class SessionRepository @Inject constructor(
             sessionApiService.getSession(sessionId).status
         }.getOrNull()?.let(SessionStatus::fromRaw)
 
-    /**
-     * Polls the backend every second for session status changes.
-     * Matches the proven v1 React Native `useSessionSync` approach.
-     */
     fun observeSessionStatus(sessionId: String): Flow<SessionStatus> = flow {
         while (currentCoroutineContext().isActive) {
             fetchSessionStatus(sessionId)?.let { status ->
@@ -96,18 +72,6 @@ class SessionRepository @Inject constructor(
             delay(POLL_INTERVAL_MS)
         }
     }.distinctUntilChanged()
-
-    private fun toActiveSession(
-        response: CreateSessionResponse,
-        role: SessionParticipantRole,
-    ): ActiveSession =
-        ActiveSession(
-            sessionId = response.sessionId,
-            joinCode = response.joinCode,
-            roomName = response.roomName,
-            livekitToken = response.token,
-            role = role,
-        )
 
     private fun toActiveSession(
         response: JoinSessionResponse,
@@ -127,10 +91,14 @@ class SessionRepository @Inject constructor(
             message.contains("Failed to connect", ignoreCase = true) ||
             message.contains("Unable to resolve host", ignoreCase = true) ||
             message.contains("Connection refused", ignoreCase = true) ||
-            message.contains("Network is unreachable", ignoreCase = true)
+            message.contains("Network is unreachable", ignoreCase = true) ||
+            message.contains("timed out", ignoreCase = true) ||
+            message.contains("timeout", ignoreCase = true)
         ) {
+            // Include the URL so stale iMac / LAN bake-ins are obvious in the UI.
+            val apiUrl = runCatching { runtimeConfigRepository.apiUrlBlocking() }.getOrElse { "?" }
             return SessionApiException(
-                "Cannot reach the session server. Check that Docker is running and API_URL in local.properties matches your PC's Wi‑Fi IP.",
+                "Cannot reach Assist AR API ($apiUrl). Use https://ggsexpert.vercel.app — Debug backend URL → Reset, or rebuild.",
                 0,
             )
         }

@@ -6,7 +6,6 @@ import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.ggsapple.remotear.BuildConfig
 import com.ggsapple.remotear.annotation.AnnotationController
 import com.ggsapple.remotear.annotation.AnnotationRole
 import com.ggsapple.remotear.annotation.AnnotationTool
@@ -286,8 +285,9 @@ class CallViewModel @Inject constructor(
         if (userId.isBlank()) return
         chatJob?.cancel()
         fileJob?.cancel()
-        chatJob = if (BuildConfig.IS_PREMIUM) chatChannel.subscribeWithRetry(sessionId, userId) else null
-        fileJob = if (BuildConfig.IS_PREMIUM) fileShareChannel.subscribeWithRetry(sessionId, userId) else null
+        // Instant customer app always enables chat + file channels.
+        chatJob = chatChannel.subscribeWithRetry(sessionId, userId)
+        fileJob = fileShareChannel.subscribeWithRetry(sessionId, userId)
     }
 
     fun onPermissionsResult(granted: Boolean) {

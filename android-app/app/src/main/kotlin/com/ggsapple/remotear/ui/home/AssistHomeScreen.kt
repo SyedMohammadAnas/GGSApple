@@ -16,16 +16,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Login
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material.icons.outlined.WifiOff
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -36,8 +33,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -56,27 +51,23 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ggsapple.remotear.R
-import com.ggsapple.remotear.data.local.AppMode
 import com.ggsapple.remotear.data.model.Profile
 import com.ggsapple.remotear.ui.theme.AccentOrange
 import com.ggsapple.remotear.ui.theme.OnSurfaceVariant
 import com.ggsapple.remotear.ui.theme.SurfaceVariant
-import com.ggsapple.remotear.util.PublicIdFormatter
 
+/**
+ * Customer-only Instant home — share public ID and wait for web expert.
+ */
 @Composable
 fun AssistHomeScreen(
     profile: Profile,
     uiState: HomeUiState,
-    onAppModeChange: (AppMode) -> Unit,
-    onExpertIdChange: (String) -> Unit,
-    onPasteExpertId: (String) -> Unit,
     onShareId: () -> Unit,
-    onJoinSession: () -> Unit,
     onCreateTutorial: () -> Unit,
     onSignOut: () -> Unit,
     onClearCache: () -> Unit,
@@ -93,7 +84,6 @@ fun AssistHomeScreen(
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     var menuExpanded by remember { mutableStateOf(false) }
-    val isExpert = uiState.appMode == AppMode.EXPERT
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(uiState.cacheClearMessage) {
@@ -137,19 +127,7 @@ fun AssistHomeScreen(
                         fontWeight = FontWeight.Bold,
                     )
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Switch(
-                        checked = isExpert,
-                        onCheckedChange = { checked ->
-                            onAppModeChange(if (checked) AppMode.EXPERT else AppMode.CUSTOMER)
-                        },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = AccentOrange,
-                            uncheckedThumbColor = Color.White,
-                            uncheckedTrackColor = SurfaceVariant,
-                        ),
-                    )
+                Box {
                     IconButton(onClick = { menuExpanded = true }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "Menu", tint = Color.White)
                     }
@@ -188,89 +166,56 @@ fun AssistHomeScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                if (isExpert) {
-                    Text(
-                        text = "Enter customer ID to provide quick remote support",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    OutlinedTextField(
-                        value = uiState.expertIdInput,
-                        onValueChange = onExpertIdChange,
-                        placeholder = { Text("Enter the ID", color = OnSurfaceVariant) },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(28.dp),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        trailingIcon = {
-                            IconButton(onClick = {
-                                clipboard.getText()?.text?.let(onPasteExpertId)
-                            }) {
-                                Icon(Icons.Outlined.ContentCopy, contentDescription = "Paste", tint = OnSurfaceVariant)
-                            }
-                        },
-                    )
-                    OrangePillButton(
-                        text = "Join the session",
-                        icon = Icons.AutoMirrored.Outlined.Login,
-                        enabled = PublicIdFormatter.isValid(uiState.expertIdInput) && !uiState.isLoading,
-                        loading = uiState.isLoading,
-                        onClick = onJoinSession,
-                    )
-                } else {
-                    Text(
-                        text = "Share your ID to receive quick remote support",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(28.dp))
-                            .background(SurfaceVariant)
-                            .padding(horizontal = 20.dp, vertical = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Column {
-                            Text("Your ID", style = MaterialTheme.typography.labelSmall, color = OnSurfaceVariant)
-                            Text(
-                                text = uiState.formattedPublicId,
-                                style = MaterialTheme.typography.titleMedium,
-                                color = Color.White,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                        }
-                        IconButton(onClick = {
-                            clipboard.setText(AnnotatedString(uiState.formattedPublicId))
-                        }) {
-                            Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy ID", tint = Color.White)
-                        }
+                Text(
+                    text = "Share your ID to receive quick remote support",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(28.dp))
+                        .background(SurfaceVariant)
+                        .padding(horizontal = 20.dp, vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column {
+                        Text("Your ID", style = MaterialTheme.typography.labelSmall, color = OnSurfaceVariant)
+                        Text(
+                            text = uiState.formattedPublicId,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                        )
                     }
-                    OrangePillButton(
-                        text = "Share your ID",
-                        icon = Icons.Outlined.Share,
-                        enabled = !uiState.isEnsuringSession,
-                        loading = uiState.isEnsuringSession,
-                        onClick = {
-                            onShareId()
-                            val shareText = "Join my AR Assist session with my ID: ${uiState.formattedPublicId}"
-                            context.startActivity(
-                                Intent.createChooser(
-                                    Intent(Intent.ACTION_SEND).apply {
-                                        type = "text/plain"
-                                        putExtra(Intent.EXTRA_TEXT, shareText)
-                                    },
-                                    "Share your ID",
-                                ),
-                            )
-                        },
-                    )
+                    IconButton(onClick = {
+                        clipboard.setText(AnnotatedString(uiState.formattedPublicId))
+                    }) {
+                        Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy ID", tint = Color.White)
+                    }
                 }
+                OrangePillButton(
+                    text = "Share your ID",
+                    icon = Icons.Outlined.Share,
+                    enabled = true,
+                    loading = false,
+                    onClick = {
+                        onShareId()
+                        val shareText = "Join my AR Assist session with my ID: ${uiState.formattedPublicId}"
+                        context.startActivity(
+                            Intent.createChooser(
+                                Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, shareText)
+                                },
+                                "Share your ID",
+                            ),
+                        )
+                    },
+                )
 
                 OutlinedButton(
                     onClick = onCreateTutorial,
@@ -339,7 +284,11 @@ private fun OrangePillButton(
             .background(if (enabled) AccentOrange else AccentOrange.copy(alpha = 0.4f)),
     ) {
         if (loading) {
-            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+            androidx.compose.material3.CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                color = Color.White,
+                strokeWidth = 2.dp,
+            )
         } else {
             Icon(icon, contentDescription = null, tint = Color.White)
             Spacer(modifier = Modifier.width(8.dp))
@@ -447,7 +396,7 @@ private fun DebugBackendSheet(
             OutlinedTextField(
                 value = apiUrl,
                 onValueChange = onApiUrlChange,
-                label = { Text("API URL (https://…)") },
+                label = { Text("API URL (https://ggsexpert.vercel.app)") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
@@ -455,7 +404,7 @@ private fun DebugBackendSheet(
             OutlinedTextField(
                 value = livekitUrl,
                 onValueChange = onLivekitUrlChange,
-                label = { Text("LiveKit URL (wss://…)") },
+                label = { Text("LiveKit URL (wss://…tail…:7880)") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )

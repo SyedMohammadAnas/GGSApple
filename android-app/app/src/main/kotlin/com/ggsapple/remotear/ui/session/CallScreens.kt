@@ -7,8 +7,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -37,7 +35,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.ggsapple.remotear.BuildConfig
 import com.ggsapple.remotear.annotation.AnnotationTool
-import com.ggsapple.remotear.annotation.HOST_VIDEO_ASPECT
 import com.ggsapple.remotear.annotation.PointerOverlay
 import com.ggsapple.remotear.annotation.RenderedStroke
 import com.ggsapple.remotear.ar.ARCoreManager
@@ -47,7 +44,6 @@ import com.ggsapple.remotear.data.realtime.ChatMessage
 import com.ggsapple.remotear.data.realtime.SharedFileNotice
 import com.ggsapple.remotear.ui.annotation.AnnotationOverlay
 import com.ggsapple.remotear.ui.annotation.DrawingTouchLayer
-import com.ggsapple.remotear.ui.annotation.PointerTouchLayer
 import com.ggsapple.remotear.ui.call.AnnotationSidebar
 import com.ggsapple.remotear.ui.call.ArFallbackBanner
 import com.ggsapple.remotear.ui.call.ArScanRingOverlay
@@ -56,15 +52,12 @@ import com.ggsapple.remotear.ui.call.AssistSessionTopBar
 import com.ggsapple.remotear.ui.call.CallControlBottomSheet
 import com.ggsapple.remotear.ui.call.ChatSheet
 import com.ggsapple.remotear.ui.call.FileSharingSheet
-import com.ggsapple.remotear.ui.call.LiveKitVideoView
 import com.ggsapple.remotear.ui.call.ModelDetailSheet
 import com.ggsapple.remotear.ui.call.ReconnectingBanner
 import com.ggsapple.remotear.ui.call.RemoteNetworkUnstableBadge
 import com.ggsapple.remotear.ui.call.SessionOptionsSheet
 import com.ggsapple.remotear.ui.theme.Background
 import com.ggsapple.remotear.ui.theme.OnSurfaceVariant
-import io.livekit.android.room.Room
-import io.livekit.android.room.track.VideoTrack
 import io.livekit.android.room.track.video.CameraCapturerUtils
 import livekit.org.webrtc.CameraXHelper
 
@@ -80,7 +73,6 @@ fun CustomerCallScreen(
     activeColor: String,
     chatMessages: List<ChatMessage>,
     sharedFiles: List<SharedFileNotice>,
-    isPremium: Boolean = BuildConfig.IS_PREMIUM,
     onViewSizeChanged: (Float, Float) -> Unit,
     onDraftChanged: (RenderedStroke?) -> Unit,
     onStrokeStreaming: (RenderedStroke) -> Unit,
@@ -192,7 +184,6 @@ fun CustomerCallScreen(
         AssistCallChrome(
             uiState = uiState,
             isTechnician = false,
-            isPremium = isPremium,
             drawingEnabled = drawingEnabled,
             onSidebarToolSelected = onSidebarToolSelected,
             onToggleMute = onToggleMute,
@@ -211,7 +202,6 @@ fun CustomerCallScreen(
             uiState = uiState,
             chatMessages = chatMessages,
             sharedFiles = sharedFiles,
-            isPremium = isPremium,
             onDismiss = onDismissSessionPanel,
             onOpenChat = onOpenChat,
             onOpenFiles = onOpenFiles,
@@ -248,185 +238,10 @@ fun CustomerCallScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TechnicianCallScreen(
-    uiState: CallUiState,
-    room: Room?,
-    remoteVideoTrack: VideoTrack?,
-    annotationStrokes: List<RenderedStroke>,
-    draftStroke: RenderedStroke?,
-    activeTool: AnnotationTool,
-    activeColor: String,
-    chatMessages: List<ChatMessage>,
-    sharedFiles: List<SharedFileNotice>,
-    isPremium: Boolean = BuildConfig.IS_PREMIUM,
-    onViewSizeChanged: (Float, Float) -> Unit,
-    onDraftChanged: (RenderedStroke?) -> Unit,
-    onStrokeStreaming: (RenderedStroke) -> Unit,
-    onStrokeCommitted: (RenderedStroke) -> Unit,
-    onPointerEvent: (Float, Float, Boolean) -> Unit,
-    onSidebarToolSelected: (SidebarTool) -> Unit,
-    onToggleMute: () -> Unit,
-    onToggleSpeaker: () -> Unit,
-    onTogglePause: () -> Unit,
-    onEndSession: () -> Unit,
-    onOpenSessionMenu: () -> Unit,
-    onDismissSessionPanel: () -> Unit,
-    onOpenChat: () -> Unit,
-    onOpenFiles: () -> Unit,
-    onChatInputChange: (String) -> Unit,
-    onSendChat: () -> Unit,
-    onPickFile: () -> Unit,
-    onOpenSharedFile: (SharedFileNotice) -> Unit,
-    onStartRecording: () -> Unit,
-    onStopRecording: () -> Unit,
-    onToggleBottomSheet: () -> Unit,
-    onSearchQueryChange: (String) -> Unit,
-    onModelSelected: (ModelItem) -> Unit,
-    onDismissModelDetail: () -> Unit,
-    onPlaceModel: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val displayCode = formatJoinCodeForDisplay(uiState.joinCode)
-    val hasVideo = room != null && remoteVideoTrack != null
-    val drawingEnabled = hasVideo && uiState.connectionStatus != CallConnectionStatus.RECONNECTING
-    val drawToolActive = uiState.sidebarTool.isDrawingTool()
-    val pointerActive = uiState.sidebarTool == SidebarTool.POINTER
-    val snackbarHostState = remember { SnackbarHostState() }
-
-    LaunchedEffect(uiState.toastMessage) {
-        uiState.toastMessage?.let { snackbarHostState.showSnackbar(it) }
-    }
-
-    Box(modifier = modifier.fillMaxSize().background(Background)) {
-        if (hasVideo) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Box(
-                    Modifier
-                        .fillMaxHeight()
-                        .aspectRatio(HOST_VIDEO_ASPECT)
-                        .onSizeChanged { size ->
-                            onViewSizeChanged(size.width.toFloat(), size.height.toFloat())
-                        },
-                ) {
-                    LiveKitVideoView(
-                        room = room!!,
-                        videoTrack = remoteVideoTrack,
-                        paused = uiState.isVideoPaused,
-                        modifier = Modifier.fillMaxSize().zIndex(0f),
-                    )
-                    AnnotationOverlay(
-                        strokes = annotationStrokes,
-                        draftStroke = draftStroke,
-                        modifier = Modifier.fillMaxSize().zIndex(2f),
-                        showDebugProbe = BuildConfig.ANNOTATION_DEBUG_OVERLAY,
-                    )
-                }
-            }
-        } else {
-            Column(
-                Modifier.fillMaxSize(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                CircularProgressIndicator(Modifier.size(40.dp), strokeWidth = 3.dp)
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    "Waiting for customer camera…",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = OnSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                )
-            }
-        }
-
-        AssistCallChrome(
-            uiState = uiState,
-            isTechnician = true,
-            isPremium = isPremium,
-            sessionLabel = "Session $displayCode",
-            drawingEnabled = drawingEnabled,
-            onSidebarToolSelected = onSidebarToolSelected,
-            onToggleMute = onToggleMute,
-            onToggleSpeaker = onToggleSpeaker,
-            onTogglePause = onTogglePause,
-            onEndSession = onEndSession,
-            onOpenSessionMenu = onOpenSessionMenu,
-            onToggleBottomSheet = onToggleBottomSheet,
-            onSearchQueryChange = onSearchQueryChange,
-            onModelSelected = onModelSelected,
-            onDismissModelDetail = onDismissModelDetail,
-            onPlaceModel = onPlaceModel,
-        )
-
-        SessionPanelOverlays(
-            uiState = uiState,
-            chatMessages = chatMessages,
-            sharedFiles = sharedFiles,
-            isPremium = isPremium,
-            onDismiss = onDismissSessionPanel,
-            onOpenChat = onOpenChat,
-            onOpenFiles = onOpenFiles,
-            onChatInputChange = onChatInputChange,
-            onSendChat = onSendChat,
-            onPickFile = onPickFile,
-            onOpenSharedFile = onOpenSharedFile,
-            onStartRecording = onStartRecording,
-            onStopRecording = onStopRecording,
-        )
-
-        // Constrain draw/pointer hit-testing to the 9:16 video frame only (not full screen),
-        // and keep zIndex below AssistCallChrome so mute/end/sidebar remain tappable.
-        if (hasVideo) {
-            Box(
-                modifier = Modifier.fillMaxSize().zIndex(5f),
-                contentAlignment = Alignment.Center,
-            ) {
-                Box(modifier = Modifier.fillMaxHeight().aspectRatio(HOST_VIDEO_ASPECT)) {
-                    if (drawToolActive) {
-                        DrawingTouchLayer(
-                            enabled = drawingEnabled,
-                            activeTool = activeTool,
-                            activeColor = activeColor,
-                            onViewSizeChanged = onViewSizeChanged,
-                            onDraftChanged = onDraftChanged,
-                            onStrokeStreaming = onStrokeStreaming,
-                            onStrokeCommitted = onStrokeCommitted,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
-                    if (pointerActive) {
-                        PointerTouchLayer(
-                            enabled = drawingEnabled,
-                            onViewSizeChanged = onViewSizeChanged,
-                            onPointerEvent = onPointerEvent,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
-                }
-            }
-        }
-
-        SnackbarHost(hostState = snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter).zIndex(25f))
-
-        uiState.errorMessage?.let { msg ->
-            Text(
-                text = msg,
-                modifier = Modifier.align(Alignment.Center).padding(horizontal = 24.dp).zIndex(25f),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.error,
-                textAlign = TextAlign.Center,
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
 private fun SessionPanelOverlays(
     uiState: CallUiState,
     chatMessages: List<ChatMessage>,
     sharedFiles: List<SharedFileNotice>,
-    isPremium: Boolean = BuildConfig.IS_PREMIUM,
     onDismiss: () -> Unit,
     onOpenChat: () -> Unit,
     onOpenFiles: () -> Unit,
@@ -437,7 +252,6 @@ private fun SessionPanelOverlays(
     onStartRecording: () -> Unit,
     onStopRecording: () -> Unit,
 ) {
-    if (!isPremium) return
     when (uiState.sessionPanel) {
         SessionPanel.MENU -> SessionOptionsSheet(
             isRecording = uiState.isRecording,
@@ -470,7 +284,6 @@ private fun SessionPanelOverlays(
 private fun AssistCallChrome(
     uiState: CallUiState,
     isTechnician: Boolean,
-    isPremium: Boolean = BuildConfig.IS_PREMIUM,
     drawingEnabled: Boolean,
     onSidebarToolSelected: (SidebarTool) -> Unit,
     onToggleMute: () -> Unit,
@@ -490,7 +303,7 @@ private fun AssistCallChrome(
             if (uiState.connectionStatus == CallConnectionStatus.RECONNECTING) ReconnectingBanner()
             if (uiState.arFallbackActive) ArFallbackBanner()
             if (uiState.remoteParticipantUnstable) {
-                RemoteNetworkUnstableBadge(if (isTechnician) "Customer" else "Technician")
+                RemoteNetworkUnstableBadge(if (isTechnician) "Customer" else "Expert")
             }
             if (uiState.isRecording) {
                 Text(
@@ -504,8 +317,8 @@ private fun AssistCallChrome(
                 )
             }
             AssistSessionTopBar(
-                onSessionPillClick = { if (isPremium) onOpenSessionMenu() },
-                onProfileClick = { if (isPremium) onOpenSessionMenu() },
+                onSessionPillClick = onOpenSessionMenu,
+                onProfileClick = onOpenSessionMenu,
             )
         }
 
@@ -536,7 +349,6 @@ private fun AssistCallChrome(
                     isMuted = uiState.isMuted,
                     isEnding = uiState.isEnding,
                     isTechnician = isTechnician,
-                    isPremium = isPremium,
                     expanded = uiState.bottomSheetExpanded,
                     modelsLoading = uiState.modelsLoading,
                     assetSearchQuery = uiState.assetSearchQuery,

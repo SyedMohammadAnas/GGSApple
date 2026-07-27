@@ -29,12 +29,8 @@ import com.ggsapple.remotear.ui.home.rememberConnectionReady
 import com.ggsapple.remotear.ui.session.CallViewModel
 import com.ggsapple.remotear.ui.session.CustomerCallScreen
 import com.ggsapple.remotear.ui.session.SessionEndedScreen
-import com.ggsapple.remotear.ui.session.TechnicianCallScreen
-import com.ggsapple.remotear.ui.session.WaitingScreen
-import com.ggsapple.remotear.ui.session.WaitingViewModel
 import com.ggsapple.remotear.ui.tutorial.LocalTutorialScreen
 import com.ggsapple.remotear.ui.tutorial.LocalTutorialViewModel
-import com.ggsapple.remotear.util.PublicIdFormatter
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
@@ -85,22 +81,10 @@ fun AuthenticatedNavGraph(
                 viewModel.onCustomerCallNavigated()
             }
 
-            LaunchedEffect(uiState.joinedSession) {
-                val session = uiState.joinedSession ?: return@LaunchedEffect
-                navController.navigate(
-                    Routes.technicianCall(session.sessionId, session.joinCode),
-                ) { launchSingleTop = true }
-                viewModel.clearNavigation()
-            }
-
             AssistHomeScreen(
                 profile = profile,
                 uiState = uiState,
-                onAppModeChange = viewModel::setAppMode,
-                onExpertIdChange = viewModel::onExpertIdChange,
-                onPasteExpertId = viewModel::pasteExpertId,
                 onShareId = viewModel::shareId,
-                onJoinSession = viewModel::joinSessionById,
                 onCreateTutorial = { navController.navigate(Routes.LOCAL_TUTORIAL) },
                 onSignOut = onSignOut,
                 onClearCache = viewModel::clearCache,
@@ -121,70 +105,18 @@ fun AuthenticatedNavGraph(
         }
 
         composable(
-            route = Routes.WAITING,
-            arguments = listOf(
-                navArgument("sessionId") { type = NavType.StringType },
-                navArgument("joinCode") { type = NavType.StringType },
-                navArgument("publicId") { type = NavType.StringType; defaultValue = "" },
-            ),
-        ) {
-            val viewModel: WaitingViewModel = hiltViewModel()
-            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-
-            LaunchedEffect(uiState.navigateToCall) {
-                if (uiState.navigateToCall) {
-                    navController.navigate(
-                        Routes.customerCall(
-                            sessionId = viewModel.sessionIdPublic,
-                            joinCode = uiState.joinCode,
-                        ),
-                    ) {
-                        popUpTo(Routes.HOME) { inclusive = false }
-                    }
-                    viewModel.onNavigatedToCall()
-                }
-            }
-
-            LaunchedEffect(uiState.navigateHome) {
-                if (uiState.navigateHome) {
-                    navController.navigate(Routes.HOME) {
-                        popUpTo(Routes.HOME) { inclusive = true }
-                    }
-                    viewModel.onNavigatedHome()
-                }
-            }
-
-            WaitingScreen(
-                uiState = uiState,
-                onCancel = viewModel::cancelSession,
-            )
-        }
-
-        composable(
             route = Routes.CUSTOMER_CALL,
             arguments = listOf(
                 navArgument("sessionId") { type = NavType.StringType },
                 navArgument("joinCode") { type = NavType.StringType },
             ),
         ) {
-            CallRoute(
+            CustomerCallRoute(
                 navController = navController,
                 homeRoute = Routes.HOME,
-                isCustomer = true,
-            )
-        }
-
-        composable(
-            route = Routes.TECHNICIAN_CALL,
-            arguments = listOf(
-                navArgument("sessionId") { type = NavType.StringType },
-                navArgument("joinCode") { type = NavType.StringType },
-            ),
-        ) {
-            CallRoute(
-                navController = navController,
-                homeRoute = Routes.HOME,
-                isCustomer = false,
+                onReturnHome = {
+                    // Resume customer-enter polling when popping back to home.
+                },
             )
         }
 
@@ -232,15 +164,13 @@ fun AuthenticatedNavGraph(
 }
 
 @Composable
-private fun CallRoute(
+private fun CustomerCallRoute(
     navController: androidx.navigation.NavHostController,
     homeRoute: String,
-    isCustomer: Boolean,
+    onReturnHome: () -> Unit,
 ) {
     val viewModel: CallViewModel = hiltViewModel()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val room by viewModel.roomState.collectAsStateWithLifecycle()
-    val remoteVideoTrack by viewModel.remoteVideoTrack.collectAsStateWithLifecycle()
     val annotationStrokes by viewModel.annotationStrokes.collectAsStateWithLifecycle()
     val draftStroke by viewModel.draftStroke.collectAsStateWithLifecycle()
     val pointerOverlay by viewModel.pointerOverlay.collectAsStateWithLifecycle()
@@ -249,13 +179,8 @@ private fun CallRoute(
     val chatMessages by viewModel.chatMessages.collectAsStateWithLifecycle()
     val sharedFiles by viewModel.sharedFiles.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val isPremium = com.ggsapple.remotear.BuildConfig.IS_PREMIUM
 
-    val requiredPermissions = if (isCustomer) {
-        arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
-    } else {
-        arrayOf(Manifest.permission.RECORD_AUDIO)
-    }
+    val requiredPermissions = arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -273,7 +198,7 @@ private fun CallRoute(
     val filePickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent(),
     ) { uri ->
-        if (uri != null && isPremium) {
+        if (uri != null) {
             viewModel.shareFile(uri) { picked ->
                 context.contentResolver.openInputStream(picked)
             }
@@ -281,18 +206,12 @@ private fun CallRoute(
     }
 
     LaunchedEffect(uiState.pendingRecordingIntent) {
-        if (uiState.pendingRecordingIntent && isPremium) {
+        if (uiState.pendingRecordingIntent) {
             recordingLauncher.launch(viewModel.createRecordingIntent())
         }
     }
 
-    LaunchedEffect(isCustomer) {
-        if (!isCustomer) {
-            viewModel.loadModels()
-        }
-    }
-
-    LaunchedEffect(isCustomer) {
+    LaunchedEffect(Unit) {
         val allGranted = requiredPermissions.all { permission ->
             ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
         }
@@ -305,6 +224,7 @@ private fun CallRoute(
 
     LaunchedEffect(uiState.navigateToSessionEnded) {
         if (uiState.navigateToSessionEnded) {
+            onReturnHome()
             navController.navigate(Routes.SESSION_ENDED) {
                 popUpTo(homeRoute) { inclusive = false }
             }
@@ -321,75 +241,34 @@ private fun CallRoute(
         }
     }
 
-    if (isCustomer) {
-        CustomerCallScreen(
-            uiState = uiState,
-            arCoreManager = viewModel.arCoreManagerRef,
-            annotationStrokes = annotationStrokes,
-            draftStroke = draftStroke,
-            pointerOverlay = pointerOverlay,
-            activeTool = activeTool,
-            activeColor = activeColor,
-            chatMessages = if (isPremium) chatMessages else emptyList(),
-            sharedFiles = if (isPremium) sharedFiles else emptyList(),
-            isPremium = isPremium,
-            onViewSizeChanged = viewModel::onAnnotationViewSize,
-            onDraftChanged = viewModel::setDraftStroke,
-            onStrokeStreaming = { },
-            onStrokeCommitted = viewModel::commitAnnotationStroke,
-            onSidebarToolSelected = viewModel::setSidebarTool,
-            onToggleMute = viewModel::toggleMute,
-            onToggleSpeaker = viewModel::toggleSpeaker,
-            onTogglePause = viewModel::toggleVideoPaused,
-            onEndSession = viewModel::endSession,
-            onOpenSessionMenu = { if (isPremium) viewModel.openSessionMenu() },
-            onDismissSessionPanel = viewModel::dismissSessionPanel,
-            onOpenChat = { if (isPremium) viewModel.openChat() },
-            onOpenFiles = { if (isPremium) viewModel.openFiles() },
-            onChatInputChange = viewModel::setChatInput,
-            onSendChat = viewModel::sendChatMessage,
-            onPickFile = { if (isPremium) filePickerLauncher.launch("*/*") },
-            onOpenSharedFile = openSharedFile,
-            onStartRecording = { if (isPremium) viewModel.requestStartRecording() },
-            onStopRecording = viewModel::stopRecording,
-        )
-    } else {
-        TechnicianCallScreen(
-            uiState = uiState,
-            room = room,
-            remoteVideoTrack = remoteVideoTrack,
-            annotationStrokes = annotationStrokes,
-            draftStroke = draftStroke,
-            activeTool = activeTool,
-            activeColor = activeColor,
-            chatMessages = if (isPremium) chatMessages else emptyList(),
-            sharedFiles = if (isPremium) sharedFiles else emptyList(),
-            isPremium = isPremium,
-            onViewSizeChanged = viewModel::onAnnotationViewSize,
-            onDraftChanged = viewModel::setDraftStroke,
-            onStrokeStreaming = viewModel::streamAnnotationStroke,
-            onStrokeCommitted = viewModel::commitAnnotationStroke,
-            onPointerEvent = viewModel::streamPointer,
-            onSidebarToolSelected = viewModel::setSidebarTool,
-            onToggleMute = viewModel::toggleMute,
-            onToggleSpeaker = viewModel::toggleSpeaker,
-            onTogglePause = viewModel::toggleVideoPaused,
-            onEndSession = viewModel::endSession,
-            onOpenSessionMenu = { if (isPremium) viewModel.openSessionMenu() },
-            onDismissSessionPanel = viewModel::dismissSessionPanel,
-            onOpenChat = { if (isPremium) viewModel.openChat() },
-            onOpenFiles = { if (isPremium) viewModel.openFiles() },
-            onChatInputChange = viewModel::setChatInput,
-            onSendChat = viewModel::sendChatMessage,
-            onPickFile = { if (isPremium) filePickerLauncher.launch("*/*") },
-            onOpenSharedFile = openSharedFile,
-            onStartRecording = { if (isPremium) viewModel.requestStartRecording() },
-            onStopRecording = viewModel::stopRecording,
-            onToggleBottomSheet = viewModel::toggleBottomSheetExpanded,
-            onSearchQueryChange = viewModel::setAssetSearchQuery,
-            onModelSelected = viewModel::selectModel,
-            onDismissModelDetail = viewModel::dismissModelDetail,
-            onPlaceModel = viewModel::placeSelectedModel,
-        )
-    }
+    CustomerCallScreen(
+        uiState = uiState,
+        arCoreManager = viewModel.arCoreManagerRef,
+        annotationStrokes = annotationStrokes,
+        draftStroke = draftStroke,
+        pointerOverlay = pointerOverlay,
+        activeTool = activeTool,
+        activeColor = activeColor,
+        chatMessages = chatMessages,
+        sharedFiles = sharedFiles,
+        onViewSizeChanged = viewModel::onAnnotationViewSize,
+        onDraftChanged = viewModel::setDraftStroke,
+        onStrokeStreaming = { },
+        onStrokeCommitted = viewModel::commitAnnotationStroke,
+        onSidebarToolSelected = viewModel::setSidebarTool,
+        onToggleMute = viewModel::toggleMute,
+        onToggleSpeaker = viewModel::toggleSpeaker,
+        onTogglePause = viewModel::toggleVideoPaused,
+        onEndSession = viewModel::endSession,
+        onOpenSessionMenu = viewModel::openSessionMenu,
+        onDismissSessionPanel = viewModel::dismissSessionPanel,
+        onOpenChat = viewModel::openChat,
+        onOpenFiles = viewModel::openFiles,
+        onChatInputChange = viewModel::setChatInput,
+        onSendChat = viewModel::sendChatMessage,
+        onPickFile = { filePickerLauncher.launch("*/*") },
+        onOpenSharedFile = openSharedFile,
+        onStartRecording = viewModel::requestStartRecording,
+        onStopRecording = viewModel::stopRecording,
+    )
 }

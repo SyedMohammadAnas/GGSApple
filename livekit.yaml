@@ -1,24 +1,48 @@
 port: 7880
+
 rtc:
+
   tcp_port: 7881
+
   port_range_start: 7900
+
   port_range_end: 7999
+
   use_external_ip: false
-  # iMac Lab Tailscale — phones reach Docker via Tailscale mesh.
-  node_ip: 100.83.95.8
+
+  # Homelab Tailscale — phones / expert browser reach Docker via Tailscale mesh.
+
+  node_ip: 100.70.151.71
+
+
 
 turn:
+
   enabled: true
-  domain: 100.83.95.8
+
+  domain: 100.70.151.71
+
   udp_port: 3478
+
   external_tls: false
 
+
+
 keys:
+
   devkey: secret
 
+
+
 logging:
+
   level: info
 
+
+
 room:
+
   empty_timeout: 300
+
   max_participants: 2
+
