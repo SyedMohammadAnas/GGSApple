@@ -1,34 +1,116 @@
 import SwiftUI
 import LiveKit
 import UIKit
+import ARKit
+import RealityKit
 
+/// Live call — Instant is **customer-only**; Assist AR web is the expert.
 struct CallView: View {
     let credentials: SessionCredentials
     var onEnd: () -> Void
 
     @StateObject private var liveKit = LiveKitManager()
-    @State private var selectedTool: AnnotationTool = .freehand
-    @State private var showAssets = false
+    /// Customer keeps Offline-style AR for local annotations while streaming frames to LiveKit.
+    @State private var arViewModel = OfflineAssistViewModel()
+    @State private var drawerSnap: CallDrawerSnap = .collapsed
     @State private var connectError: String?
+    @State private var flashScreenshot = false
+    @State private var sessionStartedAt = Date()
+    @State private var annotationCollapsed = false
+    @State private var showSurfaceCoach = false
+    @State private var didStartConnect = false
+    /// Avoid double leave when LiveKit signal + status poll both fire.
+    @State private var didLeaveCall = false
+    @State private var statusPollTask: Task<Void, Never>?
+
+    private var chromeVisible: Bool { !showSurfaceCoach }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            videoLayer
 
-            VStack {
-                topBar
-                Spacer()
-                bottomChrome
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            // True customer POV for the expert: ARView composites (camera + world annotations).
+            OfflineARContainer(
+                viewModel: arViewModel,
+                // POV encode starts after the surface coach so scanning stays light.
+                streamMode: showSurfaceCoach ? .off : .customerPOV,
+                onCameraFrame: { buffer, rotationDegrees in
+                    liveKit.captureARFrame(buffer, rotationDegrees: rotationDegrees)
+                },
+                // Customer local marks → web expert wire; POV already bakes them into video.
+                onAnnotationEvent: { payload in
+                    forwardCustomerAnnotation(payload)
+                }
+            )
+            .ignoresSafeArea()
 
-            HStack {
-                Spacer()
-                annotationToolbar
-                    .padding(.trailing, 8)
+            // Pointer uses SwiftUI drag in the same coordinate space as the glowing dot.
+            if chromeVisible, arViewModel.selectedTool == .pointer {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in
+                                arViewModel.screenPointer = value.location
+                            }
+                    )
+
+                if let point = arViewModel.screenPointer {
+                    ZStack {
+                        Circle()
+                            .fill(Color.red.opacity(0.4))
+                            .frame(width: 18, height: 18)
+                            .blur(radius: 4)
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 6, height: 6)
+                            .shadow(color: .red.opacity(0.85), radius: 3, x: 0, y: 0)
+                    }
+                    .position(point)
+                    .allowsHitTesting(false)
+                }
             }
+
+            if chromeVisible {
+                VStack {
+                    topBar
+                    Spacer()
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+                .zIndex(2)
+
+                // Behind the drawer so peek / expanded cover the rail.
+                HStack {
+                    Spacer()
+                    AnnotationToolRail(
+                        selectedTool: Binding(
+                            get: { arViewModel.selectedTool },
+                            set: { arViewModel.selectTool($0) }
+                        ),
+                        isCollapsed: $annotationCollapsed,
+                        dimmed: drawerSnap == .expanded
+                    )
+                    .padding(.trailing, annotationCollapsed ? 0 : 8)
+                }
+                .zIndex(3)
+
+                CallBottomDrawer(
+                    snap: $drawerSnap,
+                    controls: liveCallControls,
+                    recentAssetItems: arViewModel.recentAssetItems,
+                    catalogAssetItems: arViewModel.catalogItems,
+                    selectedModelId: arViewModel.selectedModelId,
+                    onSelectAsset: { item in
+                        arViewModel.selectCatalogModel(item)
+                    }
+                )
+                .zIndex(4)
+            }
+
+            SurfaceCoachOverlay(isPresented: $showSurfaceCoach)
+                .zIndex(8)
 
             if let connectError {
                 Text(connectError)
@@ -36,180 +118,191 @@ struct CallView: View {
                     .foregroundStyle(.orange)
                     .padding()
                     .assistGlassRounded(12)
+                    .zIndex(10)
+            }
+
+            if flashScreenshot {
+                Color.white
+                    .ignoresSafeArea()
+                    .opacity(0.35)
+                    .allowsHitTesting(false)
+                    .zIndex(11)
+                    .transition(.opacity)
             }
         }
         .preferredColorScheme(.dark)
-        .task { await connect() }
-        .sheet(isPresented: $showAssets) {
-            AssetsPlaceholderSheet()
-                .presentationDetents([.medium, .large])
-        }
-    }
-
-    @ViewBuilder
-    private var videoLayer: some View {
-        if credentials.role == .expert {
-            if let track = liveKit.remoteVideoTrack {
-                LiveKitVideoView(track: track).ignoresSafeArea()
-            } else {
-                waitingVideo(status: liveKit.statusText)
+        .onAppear {
+            sessionStartedAt = Date()
+            showSurfaceCoach = true
+            arViewModel.worldBridge?.localRole = .customer
+            // Web expert draws → raycast into this customer's AR space.
+            let vm = arViewModel
+            liveKit.onAnnotationReceived = { msg in
+                vm.worldBridge?.applyRemoteWireEvent(msg)
+                vm.annotationCount = vm.worldBridge?.annotationCount ?? 0
             }
-        } else if let track = liveKit.localVideoTrack {
-            LiveKitVideoView(track: track).ignoresSafeArea()
-        } else {
-            waitingVideo(status: liveKit.statusText)
-        }
-    }
-
-    private func waitingVideo(status: String) -> some View {
-        Color.black.ignoresSafeArea()
-            .overlay {
-                VStack(spacing: 8) {
-                    ProgressView().tint(.white)
-                    Text(status)
-                        .foregroundStyle(.white.opacity(0.7))
-                        .font(.footnote)
+            // Expert End Call (or expert left room) → leave Instant + reset home.
+            liveKit.onRemoteSessionEnded = {
+                Task { @MainActor in
+                    await leaveCall(reason: "remote_livekit")
                 }
             }
+            startSessionStatusPoll()
+            arViewModel.syncModelWireToPeer = true
+            Task { await arViewModel.fetchModelCatalog() }
+            print("[Call] customer-only — AR + surface coach; remote web annotations enabled")
+        }
+        .onChange(of: arViewModel.planeCount) { _, count in
+            dismissSurfaceCoachIfNeeded(planeCount: count)
+        }
+        .onChange(of: liveKit.isVideoPaused) { _, paused in
+            arViewModel.isVideoPaused = paused
+        }
+        .onDisappear {
+            statusPollTask?.cancel()
+            statusPollTask = nil
+            liveKit.onAnnotationReceived = nil
+            liveKit.onRemoteSessionEnded = nil
+            arViewModel.worldBridge?.teardownARSession()
+        }
     }
 
     private var topBar: some View {
         HStack {
-            Button { showAssets = true } label: {
-                HStack(spacing: 6) {
-                    Text("Assist AR Session")
-                        .font(.subheadline.weight(.semibold))
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.bold))
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-            }
-            .assistGlassCapsule()
+            ARSessionTimerCapsule(startedAt: sessionStartedAt)
 
             Spacer()
 
-            Button { showAssets = true } label: {
-                Image(systemName: "circle.grid.2x2")
-                    .font(.body.weight(.semibold))
-                    .frame(width: 40, height: 40)
+            CallScreenshotButton {
+                captureCleanScreenshot()
             }
-            .assistGlassCircle()
         }
     }
 
-    private var annotationToolbar: some View {
-        VStack(spacing: 10) {
-            ForEach(AnnotationTool.allCases) { tool in
-                Button { selectedTool = tool } label: {
-                    Image(systemName: tool.systemImage)
-                        .font(.body.weight(.semibold))
-                        .frame(width: 40, height: 40)
-                        .foregroundStyle(selectedTool == tool ? AppTheme.orange : .primary)
-                }
-                .assistGlassRounded(12, tint: selectedTool == tool ? AppTheme.orange.opacity(0.35) : nil)
-            }
-        }
-        .padding(8)
-        .assistGlassRounded(18)
-    }
-
-    private var bottomChrome: some View {
-        VStack(spacing: 10) {
-            Capsule()
-                .fill(Color.primary.opacity(0.25))
-                .frame(width: 36, height: 4)
-
-            HStack(spacing: 18) {
-                glassCallButton(
-                    title: "speaker",
-                    system: liveKit.isSpeakerOn ? "speaker.wave.2.fill" : "speaker.slash.fill"
-                ) { liveKit.toggleSpeaker() }
-
-                glassCallButton(
-                    title: "mute",
-                    system: liveKit.isMuted ? "mic.slash.fill" : "mic.fill"
-                ) { liveKit.toggleMute() }
-
-                glassCallButton(
-                    title: liveKit.isVideoPaused ? "resume" : "pause",
-                    system: liveKit.isVideoPaused ? "play.fill" : "pause.fill"
-                ) { liveKit.toggleVideoPaused() }
-
-                VStack(spacing: 4) {
-                    Button {
-                        Task {
-                            await liveKit.disconnect()
-                            onEnd()
-                        }
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.title3.weight(.bold))
-                            .foregroundStyle(.white)
-                            .frame(width: 56, height: 56)
-                    }
-                    .assistGlassCircle(tint: .red)
-
-                    Text("end")
-                        .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.75))
+    private var liveCallControls: [CallControlAction] {
+        [
+            CallControlAction(
+                id: "speaker",
+                title: "speaker",
+                systemImage: liveKit.isSpeakerOn ? "speaker.wave.2.fill" : "speaker.slash.fill"
+            ) { liveKit.toggleSpeaker() },
+            CallControlAction(
+                id: "mute",
+                title: "mute",
+                systemImage: liveKit.isMuted ? "mic.slash.fill" : "mic.fill"
+            ) { liveKit.toggleMute() },
+            CallControlAction(
+                id: "pause",
+                title: liveKit.isVideoPaused ? "resume" : "pause",
+                systemImage: liveKit.isVideoPaused ? "play.fill" : "pause.fill"
+            ) { liveKit.toggleVideoPaused() },
+            CallControlAction(
+                id: "end",
+                title: "end",
+                systemImage: "xmark",
+                isDestructive: true
+            ) {
+                Task {
+                    // Notify Assist AR before tear-down so the expert leaves too.
+                    await liveKit.publishSessionEnd(reason: "customer_ended")
+                    await leaveCall(reason: "customer_end_button")
                 }
             }
-        }
-        .padding(.top, 12)
-        .padding(.bottom, 10)
-        .padding(.horizontal, 16)
-        .frame(maxWidth: .infinity)
-        .assistGlassRounded(22)
+        ]
     }
 
-    private func glassCallButton(title: String, system: String, action: @escaping () -> Void) -> some View {
-        VStack(spacing: 4) {
-            Button(action: action) {
-                Image(systemName: system)
-                    .font(.title3)
-                    .frame(width: 56, height: 56)
+    private func dismissSurfaceCoachIfNeeded(planeCount: Int) {
+        guard showSurfaceCoach, planeCount > 0 else { return }
+        withAnimation(.easeOut(duration: 0.35)) {
+            showSurfaceCoach = false
+        }
+        print("[Call] surface coach dismissed — planes=\(planeCount); starting LiveKit (AR buffers)")
+        Task { await connectOnce() }
+    }
+
+    /// Customer: ARView snapshot only (no SwiftUI chrome).
+    private func captureCleanScreenshot() {
+        print("[Call] screenshot requested (clean ARView)")
+        arViewModel.worldBridge?.captureCleanScreenshot { image in
+            guard let image else { return }
+            CallScreenshotCapture.saveToPhotos(image)
+            withAnimation(.easeOut(duration: 0.12)) { flashScreenshot = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                withAnimation(.easeOut(duration: 0.2)) { flashScreenshot = false }
             }
-            .assistGlassCircle()
-
-            Text(title)
-                .font(.caption2)
-                .foregroundStyle(.white.opacity(0.75))
         }
     }
 
-    private func connect() async {
+    private func connectOnce() async {
+        guard !didStartConnect else { return }
+        didStartConnect = true
         do {
             try await liveKit.connect(
-                url: RuntimeConfig.liveKitURL,
+                url: credentials.livekitUrl,
                 token: credentials.token,
-                publishCamera: credentials.role == .customer
+                publishMode: .arBuffers
             )
         } catch {
-            connectError = error.localizedDescription
-            print("[Call] connect FAILED: \(error.localizedDescription)")
+            let detail = error.localizedDescription
+            connectError = "LiveKit failed (\(credentials.livekitUrl)): \(detail)"
+            print("[Call] connect FAILED url=\(credentials.livekitUrl) err=\(detail)")
         }
     }
-}
 
-struct LiveKitVideoView: UIViewRepresentable {
-    let track: VideoTrack
-
-    func makeUIView(context: Context) -> VideoView {
-        let view = VideoView()
-        view.track = track
-        view.layoutMode = .fill
-        return view
+    /// Single-fire leave used by End button, remote signal, and status poll.
+    @MainActor
+    private func leaveCall(reason: String) async {
+        guard !didLeaveCall else { return }
+        didLeaveCall = true
+        statusPollTask?.cancel()
+        statusPollTask = nil
+        print("[Call] leaving reason=\(reason)")
+        await liveKit.disconnect()
+        onEnd()
     }
 
-    func updateUIView(_ uiView: VideoView, context: Context) {
-        uiView.track = track
+    /// Backup when expert ends before LiveKit is up (surface coach) or data packet is missed.
+    private func startSessionStatusPoll() {
+        statusPollTask?.cancel()
+        let sessionId = credentials.sessionId
+        statusPollTask = Task { @MainActor in
+            while !Task.isCancelled, !didLeaveCall {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                if Task.isCancelled || didLeaveCall { break }
+                do {
+                    let session = try await AuthService.shared.client.auth.session
+                    let status = try await SessionService.shared.fetchSessionStatus(
+                        sessionId: sessionId,
+                        accessToken: session.accessToken
+                    )
+                    if status != "active" {
+                        print("[Call] session status=\(status) — ending locally")
+                        await leaveCall(reason: "session_status_\(status)")
+                        break
+                    }
+                } catch {
+                    print("[Call] status poll skipped: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    /// Forward customer-origin wire events (blue marks) to the web expert over LiveKit data.
+    private func forwardCustomerAnnotation(_ payload: [String: Any]) {
+        var msg = payload
+        if msg["role"] == nil {
+            msg["role"] = AnnotationRole.customer.rawValue
+        }
+        let type = msg["type"] as? String ?? ""
+        // Stream freehand points unreliably for lower latency; keep place/undo reliable.
+        let reliable = type != "stroke_point" && type != "pointer"
+        liveKit.publishAnnotation(msg, reliable: reliable)
     }
 }
 
 /// TeamViewer Assist AR–style tool set (shared offline + live chrome).
 enum AnnotationTool: String, CaseIterable, Identifiable {
-    case arrow, freehand, pointer, undo, delete
+    case arrow, freehand, pointer, model, undo, delete
 
     var id: String { rawValue }
 
@@ -218,51 +311,17 @@ enum AnnotationTool: String, CaseIterable, Identifiable {
         case .arrow: return "arrow.down.to.line"
         case .freehand: return "highlighter"
         case .pointer: return "hand.point.up.left.fill"
+        case .model: return "cube.fill"
         case .undo: return "arrow.uturn.backward"
         case .delete: return "trash"
         }
     }
-}
 
-struct AssetsPlaceholderSheet: View {
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 16) {
-                TextField("Search through assets", text: .constant(""))
-                    .padding(12)
-                    .background(Color.white.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .disabled(true)
-
-                Text("Asset library coming next")
-                    .foregroundStyle(.white.opacity(0.55))
-
-                LazyVGrid(
-                    columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())],
-                    spacing: 12
-                ) {
-                    ForEach(0..<6, id: \.self) { _ in
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.white.opacity(0.08))
-                            .frame(height: 88)
-                            .overlay {
-                                Image(systemName: "cube")
-                                    .foregroundStyle(.white.opacity(0.35))
-                            }
-                    }
-                }
-                Spacer()
-            }
-            .padding()
-            .background(Color.black.ignoresSafeArea())
-            .navigationTitle("Assets")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
-                }
-            }
+    /// Drawing / placement tools (not undo/delete).
+    var isContentTool: Bool {
+        switch self {
+        case .undo, .delete: return false
+        default: return true
         }
     }
 }

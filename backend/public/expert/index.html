@@ -1,0 +1,849 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GGSApple — Web Expert</title>
+    <style>
+      :root {
+        --bg: #0b0d10;
+        --panel: #14181f;
+        --line: rgba(255, 255, 255, 0.1);
+        --text: #f2f4f7;
+        --muted: #9aa3af;
+        --orange: #ff7a1a;
+        --blue: #278cf2;
+        --red: #ff2e24;
+        --green: #2fd67b;
+      }
+
+      * { box-sizing: border-box; }
+
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+      }
+
+      body {
+        display: grid;
+        grid-template-columns: 300px 1fr;
+        min-height: 100%;
+      }
+
+      aside {
+        border-right: 1px solid var(--line);
+        background: var(--panel);
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 1.05rem;
+        font-weight: 650;
+      }
+
+      .sub {
+        margin: -6px 0 4px;
+        color: var(--muted);
+        font-size: 0.78rem;
+        line-height: 1.4;
+      }
+
+      label {
+        display: grid;
+        gap: 6px;
+        font-size: 0.75rem;
+        color: var(--muted);
+      }
+
+      input, button { font: inherit; }
+
+      input {
+        width: 100%;
+        border: 1px solid var(--line);
+        background: #0d1117;
+        color: var(--text);
+        border-radius: 10px;
+        padding: 10px 12px;
+      }
+
+      input:focus {
+        outline: 1px solid var(--orange);
+        border-color: var(--orange);
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      button {
+        border: 0;
+        border-radius: 10px;
+        padding: 11px 12px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      .primary { background: var(--orange); color: #111; }
+      .ghost { background: rgba(255, 255, 255, 0.06); color: var(--text); }
+      .danger { background: var(--red); color: white; }
+
+      #status {
+        font-size: 0.78rem;
+        color: var(--muted);
+        min-height: 2.4em;
+        white-space: pre-wrap;
+      }
+
+      #status.ok { color: var(--green); }
+      #status.err { color: #ff8d86; }
+
+      .legend {
+        display: flex;
+        gap: 12px;
+        font-size: 0.72rem;
+        color: var(--muted);
+      }
+
+      .legend span::before {
+        content: "";
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 5px;
+        vertical-align: middle;
+      }
+
+      .legend .expert::before { background: var(--orange); }
+      .legend .customer::before { background: var(--blue); }
+
+      main {
+        position: relative;
+        min-height: 100vh;
+        background: #000;
+        display: grid;
+        place-items: center;
+      }
+
+      .stage {
+        position: relative;
+        width: min(100%, 480px);
+        aspect-ratio: 9 / 16;
+        background: #111;
+        border-radius: 18px;
+        overflow: hidden;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+      }
+
+      #remoteVideo {
+        width: 100%;
+        height: 100%;
+        /* contain — map touches into the letterboxed content box */
+        object-fit: contain;
+        background: #000;
+        display: block;
+        transform-origin: center center;
+      }
+
+      #annotateCanvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        touch-action: none;
+        cursor: crosshair;
+      }
+
+      .tools {
+        position: absolute;
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+
+      .tools button {
+        min-width: 72px;
+        background: rgba(20, 24, 31, 0.82);
+        color: white;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        backdrop-filter: blur(10px);
+      }
+
+      .tools button.active {
+        background: var(--orange);
+        color: #111;
+        border-color: transparent;
+      }
+
+      .badge {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(0, 0, 0, 0.55);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        font-size: 0.72rem;
+        color: #ddd;
+      }
+
+      .empty {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        color: var(--muted);
+        font-size: 0.9rem;
+        pointer-events: none;
+        text-align: center;
+        padding: 24px;
+      }
+
+      .empty.hidden { display: none; }
+
+      .model-panel {
+        display: grid;
+        gap: 10px;
+        padding-top: 4px;
+        border-top: 1px solid var(--line);
+      }
+
+      .model-panel h2 {
+        margin: 0;
+        font-size: 0.82rem;
+        font-weight: 650;
+      }
+
+      .model-list {
+        display: grid;
+        gap: 6px;
+        max-height: 120px;
+        overflow-y: auto;
+      }
+
+      .model-card {
+        text-align: left;
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--text);
+        cursor: pointer;
+        font-size: 0.78rem;
+      }
+
+      .model-card.active {
+        border-color: var(--orange);
+        background: rgba(255, 122, 26, 0.12);
+      }
+
+      .model-card small {
+        display: block;
+        color: var(--muted);
+        margin-top: 2px;
+      }
+
+      .slider-row {
+        display: grid;
+        gap: 4px;
+        font-size: 0.72rem;
+        color: var(--muted);
+      }
+
+      .slider-row input[type="range"] {
+        width: 100%;
+        accent-color: var(--orange);
+      }
+
+      @media (max-width: 860px) {
+        body { grid-template-columns: 1fr; }
+        aside { border-right: 0; border-bottom: 1px solid var(--line); }
+        .stage { width: min(100% - 24px, 420px); margin: 16px 0 28px; }
+      }
+    </style>
+  </head>
+  <body>
+    <aside>
+      <div>
+        <h1>Web Expert</h1>
+        <p class="sub">
+          Draw on the customer POV. Marks land in their AR space and show in the
+          live feed only (orange = expert, blue = customer). No local overlay.
+        </p>
+      </div>
+
+      <div class="legend">
+        <span class="expert">Expert</span>
+        <span class="customer">Customer</span>
+      </div>
+
+      <label>
+        API base URL
+        <input id="apiUrl" value="http://100.70.151.71:3000" />
+      </label>
+
+      <label>
+        LiveKit URL
+        <input id="livekitUrl" value="wss://server-laptop-anassyed.tail3bc01f.ts.net:7880" />
+      </label>
+
+      <label>
+        Customer public ID
+        <input id="publicId" inputmode="numeric" value="79221002287" />
+      </label>
+
+      <div class="row">
+        <button class="primary" id="joinBtn" type="button">Join session</button>
+        <button class="danger" id="leaveBtn" type="button">Leave</button>
+      </div>
+
+      <div class="row">
+        <button class="ghost" id="undoBtn" type="button">Undo</button>
+        <button class="ghost" id="clearBtn" type="button">Clear all</button>
+      </div>
+
+      <button class="ghost" id="saveCfgBtn" type="button">Save config</button>
+
+      <div class="model-panel">
+        <h2>3D Models</h2>
+        <div class="model-list" id="modelList">
+          <div class="model-card" style="opacity:0.6; cursor:default;">Join session to load models</div>
+        </div>
+        <div class="slider-row">
+          <label>Rotate X <span id="rotXVal">0°</span>
+            <input type="range" id="rotX" min="-180" max="180" value="0" step="1" />
+          </label>
+        </div>
+        <div class="slider-row">
+          <label>Rotate Y <span id="rotYVal">0°</span>
+            <input type="range" id="rotY" min="-180" max="180" value="0" step="1" />
+          </label>
+        </div>
+        <div class="slider-row">
+          <label>Scale <span id="scaleVal">0.12</span>
+            <input type="range" id="scaleSlider" min="0.02" max="0.5" value="0.12" step="0.01" />
+          </label>
+        </div>
+        <button class="ghost" id="removeModelBtn" type="button">Remove model</button>
+      </div>
+
+      <div id="status">Ready. Put the phone on home (customer), then Join.</div>
+    </aside>
+
+    <main>
+      <div class="stage">
+        <video id="remoteVideo" autoplay playsinline muted></video>
+        <canvas id="annotateCanvas"></canvas>
+        <div class="badge" id="sessionBadge">No session</div>
+        <div class="empty" id="emptyHint">Waiting for customer video…</div>
+        <div class="tools">
+          <button type="button" class="active" data-tool="arrow">Arrow</button>
+          <button type="button" data-tool="draw">Draw</button>
+          <button type="button" data-tool="model">Model</button>
+          <button type="button" data-tool="off">Pan view</button>
+        </div>
+      </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js"></script>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const statusEl = $("status");
+      const videoEl = $("remoteVideo");
+      const canvas = $("annotateCanvas");
+      const ctx = canvas.getContext("2d");
+      const emptyHint = $("emptyHint");
+      const sessionBadge = $("sessionBadge");
+
+      // Lab experiment key — same default as models dashboard.
+      const DASHBOARD_KEY = "dev-dashboard";
+      const ANNOTATION_TOPIC = "annotations";
+      const EXPERT_ROLE = "expert";
+
+      let room = null;
+      let drawing = false;
+      let tool = "arrow";
+      let strokeId = null;
+      // Points in the current freehand stroke (for cancel vs end) — not drawn locally.
+      let strokePointCount = 0;
+      let arrowNumber = 0;
+      let models = [];
+      let selectedModel = null;
+      let modelLoaded = false;
+      let transformThrottle = null;
+
+      const $rotX = $("rotX");
+      const $rotY = $("rotY");
+      const $scaleSlider = $("scaleSlider");
+      const $rotXVal = $("rotXVal");
+      const $rotYVal = $("rotYVal");
+      const $scaleVal = $("scaleVal");
+      const $modelList = $("modelList");
+
+      const CFG_KEY = "ggsapple.webExpert.cfg.v3";
+
+      function setStatus(message, kind) {
+        statusEl.textContent = message;
+        statusEl.className = kind || "";
+        console.log("[WebExpert]", message);
+      }
+
+      function loadConfig() {
+        try {
+          const raw = localStorage.getItem(CFG_KEY);
+          if (!raw) return;
+          const cfg = JSON.parse(raw);
+          for (const key of ["apiUrl", "livekitUrl", "publicId"]) {
+            if (cfg[key] && $(key)) $(key).value = cfg[key];
+          }
+        } catch (err) {
+          console.warn("[WebExpert] config load failed", err);
+        }
+      }
+
+      function saveConfig() {
+        localStorage.setItem(
+          CFG_KEY,
+          JSON.stringify({
+            apiUrl: $("apiUrl").value.trim(),
+            livekitUrl: $("livekitUrl").value.trim(),
+            publicId: $("publicId").value.trim(),
+          })
+        );
+        setStatus("Config saved in this browser.", "ok");
+      }
+
+      function resizeCanvas() {
+        // Hit-target only — keep transparent; marks appear in the POV video.
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+        canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+
+      function clamp01(v) {
+        return Math.min(1, Math.max(0, v));
+      }
+
+      /**
+       * Map pointer into the letterboxed video content (object-fit: contain).
+       * Returns normalized 0…1 in customer POV space, or null if outside the picture.
+       */
+      function normFromEvent(event) {
+        const rect = videoEl.getBoundingClientRect();
+        const src = event.touches ? event.touches[0] : event;
+        const vw = videoEl.videoWidth || rect.width;
+        const vh = videoEl.videoHeight || rect.height;
+        if (!vw || !vh) return null;
+
+        const scale = Math.min(rect.width / vw, rect.height / vh);
+        const contentW = vw * scale;
+        const contentH = vh * scale;
+        const ox = (rect.width - contentW) / 2;
+        const oy = (rect.height - contentH) / 2;
+
+        const x = src.clientX - rect.left - ox;
+        const y = src.clientY - rect.top - oy;
+        if (x < 0 || y < 0 || x > contentW || y > contentH) return null;
+
+        return {
+          x: clamp01(x / contentW),
+          y: clamp01(y / contentH),
+        };
+      }
+
+      async function publishAnnotation(payload, reliable = true) {
+        if (!room || !room.localParticipant) {
+          console.warn("[WebExpert] publish skipped — not connected");
+          return;
+        }
+        const body = { ...payload, role: EXPERT_ROLE };
+        const bytes = new TextEncoder().encode(JSON.stringify(body));
+        try {
+          await room.localParticipant.publishData(bytes, {
+            reliable,
+            topic: ANNOTATION_TOPIC,
+          });
+          console.log("[WebExpert] TX", body.type, body);
+        } catch (err) {
+          console.error("[WebExpert] TX FAILED", err);
+          setStatus(`Annotation send failed: ${err.message || err}`, "err");
+        }
+      }
+
+      async function publishTransform() {
+        const payload = {
+          type: "transform",
+          rotationX: Number($rotX.value),
+          rotationY: Number($rotY.value),
+          scale: Number($scaleSlider.value),
+        };
+        await publishAnnotation(payload, false);
+      }
+
+      function scheduleTransformPublish() {
+        $rotXVal.textContent = `${$rotX.value}°`;
+        $rotYVal.textContent = `${$rotY.value}°`;
+        $scaleVal.textContent = $scaleSlider.value;
+        if (transformThrottle) return;
+        transformThrottle = setTimeout(() => {
+          transformThrottle = null;
+          void publishTransform();
+        }, 50);
+      }
+
+      async function loadModelOnCustomer(model) {
+        selectedModel = model;
+        renderModelList();
+        await publishAnnotation({
+          type: "load_model",
+          modelId: model.id,
+          url: model.url,
+          name: model.name,
+        }, true);
+        modelLoaded = true;
+        setStatus(`Loading "${model.name}" on customer device…`, "ok");
+      }
+
+      function renderModelList() {
+        if (!models.length) {
+          $modelList.innerHTML = '<div class="model-card" style="opacity:0.6; cursor:default;">No models on server</div>';
+          return;
+        }
+        $modelList.innerHTML = models.map((m) => {
+          const active = selectedModel && selectedModel.id === m.id ? " active" : "";
+          const kb = m.fileSizeBytes ? `${Math.round(m.fileSizeBytes / 1024)} KB` : "GLB";
+          return `<button type="button" class="model-card${active}" data-model-id="${m.id}">${m.name}<small>${kb}</small></button>`;
+        }).join("");
+        $modelList.querySelectorAll(".model-card[data-model-id]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const model = models.find((m) => m.id === btn.dataset.modelId);
+            if (model) void loadModelOnCustomer(model);
+          });
+        });
+      }
+
+      async function fetchModels(apiUrl) {
+        try {
+          const res = await fetch(`${apiUrl}/api/admin/models`, {
+            headers: { "x-dashboard-key": DASHBOARD_KEY },
+          });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || `Models fetch failed (${res.status})`);
+          models = json.models || [];
+          renderModelList();
+          if (models.length) {
+            setStatus(`Loaded ${models.length} model(s). Select one, then tap video to place.`, "ok");
+          }
+        } catch (err) {
+          console.warn("[WebExpert] models fetch failed", err);
+          $modelList.innerHTML = `<div class="model-card" style="opacity:0.6; cursor:default;">${err.message || "Models unavailable"}</div>`;
+        }
+      }
+
+      async function placeModel(norm) {
+        if (!selectedModel) {
+          setStatus("Select a model from the sidebar first.", "err");
+          return;
+        }
+        if (!modelLoaded) {
+          await loadModelOnCustomer(selectedModel);
+          await new Promise((r) => setTimeout(r, 800));
+        }
+        await publishAnnotation({ type: "place_model", x: norm.x, y: norm.y }, true);
+        await publishTransform();
+        setStatus(`Placed "${selectedModel.name}" — drag sliders to rotate/scale.`, "ok");
+      }
+
+      async function removeModelRemote() {
+        await publishAnnotation({ type: "remove_model" }, true);
+        modelLoaded = false;
+        setStatus("Remove model sent.", "ok");
+      }
+
+      async function placeArrow(norm) {
+        arrowNumber += 1;
+        await publishAnnotation({
+          type: "arrow",
+          x: norm.x,
+          y: norm.y,
+          number: arrowNumber,
+        }, true);
+      }
+
+      async function startStroke(event) {
+        if (tool === "off") return;
+        const norm = normFromEvent(event);
+        if (!norm) return;
+
+        if (tool === "arrow") {
+          await placeArrow(norm);
+          event.preventDefault();
+          return;
+        }
+
+        if (tool !== "draw") return;
+        drawing = true;
+        strokeId = crypto.randomUUID();
+        strokePointCount = 1;
+        await publishAnnotation({
+          type: "stroke_begin",
+          id: strokeId,
+          x: norm.x,
+          y: norm.y,
+        }, true);
+        event.preventDefault();
+      }
+
+      async function moveStroke(event) {
+        if (!drawing || tool !== "draw" || !strokeId) return;
+        const norm = normFromEvent(event);
+        if (!norm) return;
+
+        strokePointCount += 1;
+        await publishAnnotation({
+          type: "stroke_point",
+          id: strokeId,
+          x: norm.x,
+          y: norm.y,
+        }, false);
+        event.preventDefault();
+      }
+
+      async function endStroke() {
+        if (!drawing || !strokeId) {
+          drawing = false;
+          return;
+        }
+        const id = strokeId;
+        const count = strokePointCount;
+        drawing = false;
+        strokeId = null;
+        strokePointCount = 0;
+
+        if (count < 2) {
+          await publishAnnotation({ type: "stroke_cancel", id }, true);
+        } else {
+          await publishAnnotation({ type: "stroke_end", id }, true);
+        }
+      }
+
+      async function undoRemote() {
+        await publishAnnotation({ type: "undo" }, true);
+        setStatus("Undo sent to customer AR.", "ok");
+      }
+
+      async function clearRemote() {
+        arrowNumber = 0;
+        await publishAnnotation({ type: "clear" }, true);
+        setStatus("Clear sent to customer AR.", "ok");
+      }
+
+      function setTool(next) {
+        tool = next;
+        document.querySelectorAll(".tools button").forEach((btn) => {
+          btn.classList.toggle("active", btn.dataset.tool === next);
+        });
+        canvas.style.pointerEvents = next === "off" ? "none" : "auto";
+        canvas.style.cursor =
+          next === "off" ? "default" : next === "model" ? "copy" : "crosshair";
+      }
+
+      async function joinSession() {
+        const apiUrl = $("apiUrl").value.trim().replace(/\/$/, "");
+        const livekitUrl = $("livekitUrl").value.trim();
+        const publicId = $("publicId").value.trim();
+
+        if (!/^\d{11}$/.test(publicId)) {
+          setStatus("Customer public ID must be 11 digits.", "err");
+          return;
+        }
+
+        try {
+          setStatus("Joining as web expert (no password)…");
+          const joinRes = await fetch(`${apiUrl}/api/sessions/web-expert-join`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-dashboard-key": DASHBOARD_KEY,
+            },
+            body: JSON.stringify({ targetPublicId: publicId }),
+          });
+          const joinJson = await joinRes.json();
+          if (!joinRes.ok) {
+            throw new Error(joinJson.error || `Join failed (${joinRes.status})`);
+          }
+
+          sessionBadge.textContent = `session ${String(joinJson.sessionId).slice(0, 8)}…`;
+          setStatus(
+            `Joined room ${joinJson.roomName}\nPhone should enter the call now.\nConnecting LiveKit…`,
+            "ok"
+          );
+          await connectLiveKit(livekitUrl, joinJson.token);
+          await fetchModels(apiUrl);
+        } catch (err) {
+          setStatus(err.message || String(err), "err");
+        }
+      }
+
+      async function connectLiveKit(url, token) {
+        await leaveRoom(false);
+
+        const { Room, RoomEvent, Track } = LivekitClient;
+        room = new Room({ adaptiveStream: true, dynacast: true });
+
+        room.on(RoomEvent.TrackSubscribed, (track, _pub, participant) => {
+          console.log("[WebExpert] track subscribed", track.kind, participant.identity);
+          if (track.kind === Track.Kind.Video) {
+            track.attach(videoEl);
+            emptyHint.classList.add("hidden");
+            fitStageToVideo();
+            setStatus(`Receiving video from ${participant.identity}`, "ok");
+          }
+        });
+
+        room.on(RoomEvent.TrackUnsubscribed, (track) => {
+          track.detach();
+          emptyHint.classList.remove("hidden");
+        });
+
+        room.on(RoomEvent.Disconnected, () => {
+          setStatus("Disconnected from LiveKit.", "err");
+          emptyHint.classList.remove("hidden");
+        });
+
+        // Customer marks are already in the POV video — log wire only.
+        room.on(RoomEvent.DataReceived, (payload, _participant, _kind, topic) => {
+          if (topic && topic !== ANNOTATION_TOPIC) return;
+          try {
+            const msg = JSON.parse(new TextDecoder().decode(payload));
+            if (msg.role === EXPERT_ROLE) return;
+            console.log("[WebExpert] RX customer", msg.type, msg);
+          } catch (err) {
+            console.warn("[WebExpert] bad annotation packet", err);
+          }
+        });
+
+        await room.connect(url, token);
+        setStatus(`LiveKit connected. Participants: ${room.numParticipants}`, "ok");
+
+        for (const participant of room.remoteParticipants.values()) {
+          for (const pub of participant.trackPublications.values()) {
+            if (pub.track && pub.kind === Track.Kind.Video) {
+              pub.track.attach(videoEl);
+              emptyHint.classList.add("hidden");
+              fitStageToVideo();
+              setStatus(`Receiving video from ${participant.identity}`, "ok");
+            }
+          }
+        }
+      }
+
+      /// Customer POV composites are already portrait — match their encoded size.
+      function fitStageToVideo() {
+        const apply = () => {
+          if (!videoEl.videoWidth || !videoEl.videoHeight) return;
+          const stage = document.querySelector(".stage");
+          if (!stage) return;
+          stage.style.aspectRatio = `${videoEl.videoWidth} / ${videoEl.videoHeight}`;
+          console.log(
+            "[WebExpert] stage aspect",
+            videoEl.videoWidth,
+            "x",
+            videoEl.videoHeight
+          );
+          resizeCanvas();
+        };
+        if (videoEl.videoWidth) {
+          apply();
+        } else {
+          videoEl.addEventListener("loadedmetadata", apply, { once: true });
+        }
+      }
+
+      async function leaveRoom(updateStatus = true) {
+        if (room) {
+          await room.disconnect();
+          room = null;
+        }
+        videoEl.srcObject = null;
+        emptyHint.classList.remove("hidden");
+        sessionBadge.textContent = "No session";
+        drawing = false;
+        strokeId = null;
+        strokePointCount = 0;
+        if (updateStatus) setStatus("Left session.");
+      }
+
+      $("joinBtn").addEventListener("click", joinSession);
+      $("leaveBtn").addEventListener("click", () => leaveRoom(true));
+      $("undoBtn").addEventListener("click", () => { void undoRemote(); });
+      $("clearBtn").addEventListener("click", () => { void clearRemote(); });
+      $("saveCfgBtn").addEventListener("click", saveConfig);
+      $("removeModelBtn").addEventListener("click", () => { void removeModelRemote(); });
+      $rotX.addEventListener("input", scheduleTransformPublish);
+      $rotY.addEventListener("input", scheduleTransformPublish);
+      $scaleSlider.addEventListener("input", scheduleTransformPublish);
+
+      // Model tool: tap to place, drag to spin Y.
+      let modelPointerDown = null;
+
+      canvas.addEventListener("mousedown", (e) => {
+        if (tool !== "model") return;
+        modelPointerDown = { x: e.clientX, y: e.clientY };
+      });
+
+      canvas.addEventListener("mousemove", (e) => {
+        if (tool !== "model" || !modelPointerDown) return;
+        const deltaX = e.clientX - modelPointerDown.x;
+        if (Math.abs(deltaX) < 6) return;
+        modelPointerDown = { x: e.clientX, y: e.clientY, dragged: true };
+        $rotY.value = String(Math.max(-180, Math.min(180, Number($rotY.value) + deltaX * 0.4)));
+        scheduleTransformPublish();
+      });
+
+      async function finishModelPointer(event) {
+        if (tool !== "model" || !modelPointerDown) return;
+        const dragged = modelPointerDown.dragged;
+        modelPointerDown = null;
+        if (dragged) return;
+        const norm = normFromEvent(event);
+        if (norm) await placeModel(norm);
+      }
+
+      canvas.addEventListener("mouseup", (e) => { void finishModelPointer(e); });
+      canvas.addEventListener("touchend", (e) => { void finishModelPointer(e); });
+
+      document.querySelectorAll(".tools button").forEach((btn) => {
+        btn.addEventListener("click", () => setTool(btn.dataset.tool));
+      });
+
+      canvas.addEventListener("mousedown", (e) => { void startStroke(e); });
+      canvas.addEventListener("mousemove", (e) => { void moveStroke(e); });
+      window.addEventListener("mouseup", () => { void endStroke(); });
+      canvas.addEventListener("touchstart", (e) => { void startStroke(e); }, { passive: false });
+      canvas.addEventListener("touchmove", (e) => { void moveStroke(e); }, { passive: false });
+      canvas.addEventListener("touchend", () => { void endStroke(); });
+
+      window.addEventListener("resize", resizeCanvas);
+      loadConfig();
+      resizeCanvas();
+      setTool("arrow");
+    </script>
+  </body>
+</html>

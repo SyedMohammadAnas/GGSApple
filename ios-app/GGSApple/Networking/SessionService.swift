@@ -1,18 +1,13 @@
 import Foundation
 import Auth
 
+/// Instant native app is customer-only (experts use Assist AR web).
 enum AppMode: String, CaseIterable, Identifiable {
     case customer
-    case expert
 
     var id: String { rawValue }
 
-    var title: String {
-        switch self {
-        case .customer: return "Customer"
-        case .expert: return "Expert"
-        }
-    }
+    var title: String { "Customer" }
 }
 
 struct SessionCredentials: Equatable {
@@ -21,6 +16,8 @@ struct SessionCredentials: Equatable {
     let joinCode: String
     let status: String
     let token: String
+    /// LiveKit URL for this session (from API, else baked production default).
+    let livekitUrl: String
     let role: AppMode
 }
 
@@ -28,12 +25,28 @@ enum SessionAPIError: LocalizedError {
     case message(String)
     case http(Int, String)
     case badURL
+    case noActiveSession
 
     var errorDescription: String? {
         switch self {
         case .message(let m): return m
         case .http(let code, let body): return "HTTP \(code): \(body)"
         case .badURL: return "Invalid API URL"
+        case .noActiveSession: return "No active session yet"
+        }
+    }
+
+    var isWaitingForExpert: Bool {
+        switch self {
+        case .noActiveSession:
+            return true
+        case .message(let m):
+            let lower = m.lowercased()
+            return lower.contains("no active session") || lower.contains("wait for an expert")
+        case .http(let code, _) where code == 404:
+            return true
+        default:
+            return false
         }
     }
 }
@@ -43,17 +56,6 @@ final class SessionService {
     static let shared = SessionService()
 
     private init() {}
-
-    func joinByPublicId(_ publicId: String, accessToken: String) async throws -> SessionCredentials {
-        let digits = publicId.filter(\.isNumber)
-        let body = ["targetPublicId": digits]
-        let json = try await postJSON(
-            path: "/api/sessions/join-by-id",
-            accessToken: accessToken,
-            body: body
-        )
-        return try decodeCredentials(json, role: .expert)
-    }
 
     func customerEnter(accessToken: String) async throws -> SessionCredentials {
         let json = try await postJSON(
@@ -77,6 +79,18 @@ final class SessionService {
         }
     }
 
+    /// Returns `active` / `ended` / etc. Used while in CallView so Instant leaves if expert ends early.
+    func fetchSessionStatus(sessionId: String, accessToken: String) async throws -> String {
+        let json = try await getJSON(
+            path: "/api/sessions/\(sessionId)/status",
+            accessToken: accessToken
+        )
+        guard let status = json["status"] as? String else {
+            throw SessionAPIError.message("Malformed status response")
+        }
+        return status
+    }
+
     private func decodeCredentials(_ json: [String: Any], role: AppMode) throws -> SessionCredentials {
         guard
             let sessionId = json["sessionId"] as? String,
@@ -87,12 +101,17 @@ final class SessionService {
         else {
             throw SessionAPIError.message("Malformed session response")
         }
+        let fromApi = (json["livekitUrl"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let livekitUrl =
+            (fromApi?.isEmpty == false ? fromApi! : nil)
+            ?? RuntimeConfig.liveKitURL
         return SessionCredentials(
             sessionId: sessionId,
             roomName: roomName,
             joinCode: joinCode,
             status: status,
             token: token,
+            livekitUrl: livekitUrl,
             role: role
         )
     }
@@ -111,9 +130,49 @@ final class SessionService {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 20
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         print("[Session] POST \(url.absoluteString)")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let text = String(data: data, encoding: .utf8) ?? ""
+
+        guard (200...299).contains(code) else {
+            if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let err = obj["error"] as? String {
+                if code == 404 {
+                    throw SessionAPIError.noActiveSession
+                }
+                throw SessionAPIError.message(err)
+            }
+            if code == 404 {
+                throw SessionAPIError.noActiveSession
+            }
+            throw SessionAPIError.http(code, text)
+        }
+
+        guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw SessionAPIError.message("Invalid JSON")
+        }
+        return obj
+    }
+
+    private func getJSON(
+        path: String,
+        accessToken: String
+    ) async throws -> [String: Any] {
+        let base = RuntimeConfig.apiURL
+        guard let url = URL(string: path, relativeTo: base)?.absoluteURL else {
+            throw SessionAPIError.badURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 15
+
+        print("[Session] GET \(url.absoluteString)")
         let (data, response) = try await URLSession.shared.data(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         let text = String(data: data, encoding: .utf8) ?? ""

@@ -1,3 +1,36 @@
 {
-  "models": []
+  "models": [
+    {
+      "id": "duck_v1",
+      "name": "Rubber Duck",
+      "fileName": "duck_v1_ar.usdz",
+      "description": "Khronos duck — AR-scaled USDZ (meters, grounded pivot)",
+      "fileSizeBytes": 77949,
+      "createdAt": "2026-08-05T00:00:00.000Z"
+    },
+    {
+      "id": "engine_v1",
+      "name": "Car Engine",
+      "fileName": "engine_draco_ar.usdz",
+      "description": "Car engine — USDZ for RealityKit AR",
+      "fileSizeBytes": 3323702,
+      "createdAt": "2026-07-21T00:00:00.000Z"
+    },
+    {
+      "id": "tire_v1",
+      "name": "Tyre",
+      "fileName": "tire_draco_ar.usdz",
+      "description": "Tyre — USDZ for RealityKit AR",
+      "fileSizeBytes": 6291907,
+      "createdAt": "2026-07-21T00:00:00.000Z"
+    },
+    {
+      "id": "sparkplug_v1",
+      "name": "Spark Plug",
+      "fileName": "sparkplug_draco_ar.usdz",
+      "description": "Spark plug — USDZ for RealityKit AR",
+      "fileSizeBytes": 1434301,
+      "createdAt": "2026-07-21T00:00:00.000Z"
+    }
+  ]
 }

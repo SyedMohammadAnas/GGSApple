@@ -84,8 +84,6 @@ struct HomeView: View {
 
             Spacer()
 
-            modeToggle
-
             Menu {
                 Button("Debug backend URL") { home.showDebugSheet = true }
                 Button("Clear cache") { home.clearCachePreservingAuth() }
@@ -107,36 +105,23 @@ struct HomeView: View {
         .padding(.vertical, 10)
     }
 
-    /// System Toggle (Liquid Glass on iOS 26) — blue for Customer, orange for Expert.
-    private var modeToggle: some View {
-        Toggle("", isOn: Binding(
-            get: { home.mode == .expert },
-            set: { home.setMode($0 ? .expert : .customer) }
-        ))
-        .labelsHidden()
-        .tint(home.mode == .expert ? AppTheme.orange : AppChrome.customerBlue)
-        .accessibilityLabel(home.mode == .expert ? "Expert mode" : "Customer mode")
-    }
-
     // MARK: - Hero (no border)
 
     private var hero: some View {
         Image("AppPreview")
             .resizable()
             .scaledToFit()
+            // ~20% smaller than filling the hero slot.
+            .scaleEffect(0.8)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    // MARK: - Mode body
+    // MARK: - Customer body (Assist AR experts are web-only)
 
     @ViewBuilder
     private var modeBody: some View {
-        if home.mode == .customer {
-            customerBlock
-        } else {
-            expertBlock
-        }
+        customerBlock
 
         if !home.statusMessage.isEmpty && !home.statusMessage.hasPrefix("ID copied") {
             Text(home.statusMessage)
@@ -149,7 +134,7 @@ struct HomeView: View {
 
     private var customerBlock: some View {
         VStack(spacing: 12) {
-            Text("Share your ID to receive quick remote support")
+            Text("Share your ID so an Assist AR expert can connect")
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
@@ -193,46 +178,6 @@ struct HomeView: View {
         }
     }
 
-    private var expertBlock: some View {
-        VStack(spacing: 12) {
-            Text("Enter customer ID to provide quick remote support")
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.white)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-
-            HStack {
-                TextField("Enter the ID", text: $home.expertIDInput)
-                    .keyboardType(.numberPad)
-                    .textInputAutocapitalization(.never)
-                    .foregroundStyle(.white)
-                Button {
-                    home.pasteIntoExpertField()
-                } label: {
-                    Image(systemName: "clipboard")
-                        .foregroundStyle(.white.opacity(0.7))
-                        .padding(10)
-                }
-            }
-            .padding(14)
-            .background(AppTheme.panel)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-            Button {
-                Task { await home.joinAsExpert() }
-            } label: {
-                Label(home.isBusy ? "Joining…" : "Join the session", systemImage: "rectangle.portrait.and.arrow.right")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(AppTheme.orange)
-                    .foregroundStyle(.white)
-                    .clipShape(Capsule())
-            }
-            .disabled(home.isBusy)
-        }
-    }
-
     private var tutorialButton: some View {
         Button {
             home.showSoloAR = true
@@ -254,10 +199,18 @@ struct HomeView: View {
             Circle()
                 .fill(AppTheme.statusGreen)
                 .frame(width: 8, height: 8)
-            Text("Ready to connect (connection is secure)")
-                .font(.caption2)
-                .foregroundStyle(.white.opacity(0.55))
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Waiting for Assist AR expert (secure)")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.55))
+                    .lineLimit(1)
+                if !home.apiReachabilityHint.isEmpty {
+                    Text(home.apiReachabilityHint)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.white.opacity(0.35))
+                        .lineLimit(1)
+                }
+            }
             Spacer()
             Image(systemName: "wifi")
                 .foregroundStyle(AppTheme.statusGreen)
@@ -276,7 +229,7 @@ struct HomeView: View {
                 ProgressView()
                     .tint(AppTheme.orange)
                     .scaleEffect(1.3)
-                Text(home.mode == .expert ? "Joining customer…" : "Expert is joining…")
+                Text("Assist AR expert is joining…")
                     .font(.headline)
                     .foregroundStyle(.white)
                 Text("Setting up secure AR session")
@@ -318,15 +271,21 @@ struct DebugBackendSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("API") {
-                    TextField("http://100.83.95.8:3000", text: $api)
+                Section("Session API (Assist AR / Next)") {
+                    TextField("https://ggsexpert.vercel.app", text: $api)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                    Text("Production: https://ggsexpert.vercel.app · Lab Next: http://100.83.95.8:3002")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
-                Section("LiveKit") {
-                    TextField("ws://100.83.95.8:7880", text: $livekit)
+                Section("LiveKit (media)") {
+                    TextField("wss://server-laptop-anassyed.tail3bc01f.ts.net:7880", text: $livekit)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                    Text("Homelab WSS Serve (tailnet). Cleartext fallback: ws://100.70.151.71:7880. iMac Lab media retired.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
                 Section {
                     Button("Save") {
@@ -334,11 +293,18 @@ struct DebugBackendSheet: View {
                         RuntimeConfig.setLiveKitURL(livekit)
                         dismiss()
                     }
-                    Button("Reset to Tailscale defaults", role: .destructive) {
+                    Button("Reset to production defaults", role: .destructive) {
                         RuntimeConfig.clearOverrides()
+                        RuntimeConfig.markEpochCurrent()
                         api = AppConfig.defaultAPIURL.absoluteString
                         livekit = AppConfig.defaultLiveKitURL
                     }
+                }
+                Section("Effective now") {
+                    Text(RuntimeConfig.apiURL.absoluteString)
+                        .font(.caption.monospaced())
+                    Text(RuntimeConfig.liveKitURL)
+                        .font(.caption.monospaced())
                 }
             }
             .navigationTitle("Debug backend URL")
