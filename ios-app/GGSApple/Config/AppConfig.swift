@@ -19,10 +19,10 @@ enum AppConfig {
     static let googleReversedClientID =
         "com.googleusercontent.apps.664161950009-jik3hu1hkgfosc83i4v3oplporpbk0br"
 
-    // MARK: - Defaults: iMac Lab Tailscale Docker (2026-07-23)
+    // MARK: - Defaults: Vercel expert-web + Homelab LiveKit (2026-07-27)
 
-    static let defaultAPIURL = URL(string: "http://100.83.95.8:3000")!
-    static let defaultLiveKitURL = "ws://100.83.95.8:7880"
+    static let defaultAPIURL = URL(string: "https://ggsexpert.vercel.app")!
+    static let defaultLiveKitURL = "wss://server-laptop-anassyed.tail3bc01f.ts.net:7880"
 
     // MARK: - Product
 

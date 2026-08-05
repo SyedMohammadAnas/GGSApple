@@ -319,12 +319,12 @@ struct DebugBackendSheet: View {
         NavigationStack {
             Form {
                 Section("API") {
-                    TextField("http://100.83.95.8:3000", text: $api)
+                    TextField("https://ggsexpert.vercel.app", text: $api)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 }
                 Section("LiveKit") {
-                    TextField("ws://100.83.95.8:7880", text: $livekit)
+                    TextField("wss://server-laptop-anassyed.tail3bc01f.ts.net:7880", text: $livekit)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 }

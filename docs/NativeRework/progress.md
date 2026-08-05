@@ -4,7 +4,22 @@
 > Specs and phase checklists remain in `implementation-plan.md`, `trd.md`, and `cursor-prompt.md`.  
 > This file tracks **what we actually built and verified on device**.
 
-**Last updated:** 2026-07-22 — **New-phone AR + call-chrome fixes landed on main**
+**Last updated:** 2026-07-25 — **Android Instant customer-only (expert = web)**
+
+---
+
+## Android Instant — customer-only + expert-web defaults (2026-07-25) ✅ code
+
+| Item | Status |
+|------|--------|
+| Remove Instant/Master flavors → one `com.ggsapple.remotear` Instant | Done |
+| Strip native expert toggle / join / technician call | Done |
+| `POST /api/sessions/customer-enter` poll (no phone create-session) | Done |
+| Always-on speaker / mute / pause / chat / files / recording | Done |
+| Default API `http://100.83.95.8:3002` + LiveKit `:7880` | Done |
+| Device lab vs expert-web | Blocked — `expert-web/` not on GitHub yet |
+
+Vault: `Progress/GGSApple-Android-Instant-Customer-Only-2026-07-25`.
 
 ---
 
