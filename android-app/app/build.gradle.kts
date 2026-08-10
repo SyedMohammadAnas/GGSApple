@@ -40,13 +40,15 @@ android {
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${localProp("SUPABASE_ANON_KEY")}\"")
         buildConfigField(
             "String",
+            // GGS Mac Mini Serve LiveKit (tailnet) — see Company/GGS/Mobile-App-Notes
             "LIVEKIT_URL",
-            "\"${localProp("LIVEKIT_URL", "wss://server-laptop-anassyed.tail3bc01f.ts.net:7880")}\"",
+            "\"${localProp("LIVEKIT_URL", "wss://ggs-macmini.tail3bc01f.ts.net:7880")}\"",
         )
         buildConfigField(
             "String",
+            // GGS Mac Mini Funnel API (:8443)
             "API_URL",
-            "\"${localProp("API_URL", "https://ggsexpert.vercel.app")}\"",
+            "\"${localProp("API_URL", "https://ggs-macmini.tail3bc01f.ts.net:8443")}\"",
         )
     }
 

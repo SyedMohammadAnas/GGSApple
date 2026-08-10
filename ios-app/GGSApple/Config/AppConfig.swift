@@ -1,6 +1,6 @@
 import Foundation
 
-/// Central runtime config for Instant-like iOS build.
+/// Central runtime config for Instant customer app (experts use Assist AR web).
 enum AppConfig {
     // MARK: - Supabase (cloud demo — same as Android)
 
@@ -8,7 +8,7 @@ enum AppConfig {
     static let supabaseAnonKey =
         "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN1dWVsbGNoY29lZ2VyZGRxeWpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2NzAyMjAsImV4cCI6MjA5NzI0NjIyMH0.uV04X1_SPMXWdzvHJBv1CDBrys3RfQOHsAhzD3SBUeU"
 
-    /// Cross-platform deep link — must match Android + Supabase Site URL.
+    /// Cross-platform deep link — must match Android + Supabase redirect URLs.
     static let authCallbackURL = URL(string: "remotear://auth-callback")!
     static let authCallbackScheme = "remotear"
 
@@ -19,14 +19,22 @@ enum AppConfig {
     static let googleReversedClientID =
         "com.googleusercontent.apps.664161950009-jik3hu1hkgfosc83i4v3oplporpbk0br"
 
-    // MARK: - Defaults: Vercel expert-web + Homelab LiveKit (2026-07-27)
+    // MARK: - Defaults (GGS Mac Mini Funnel / Serve — bump configEpoch when URLs change)
 
-    static let defaultAPIURL = URL(string: "https://ggsexpert.vercel.app")!
-    static let defaultLiveKitURL = "wss://server-laptop-anassyed.tail3bc01f.ts.net:7880"
+    /// Bump this when production API/LiveKit defaults change so stale Debug overrides are cleared.
+    /// Epoch 5 = Mac Mini Funnel API `:8443` + Serve LiveKit WSS (clears Vercel/Homelab overrides).
+    static let configEpoch = 5
+
+    /// Funnel public API (expert-web + Express assets) on GGS Mac Mini.
+    static let defaultAPIURL = URL(string: "https://ggs-macmini.tail3bc01f.ts.net:8443")!
+    /// LiveKit Serve on GGS Mac Mini — reliable AR media requires Tailscale on the phone.
+    static let defaultLiveKitURL = "wss://ggs-macmini.tail3bc01f.ts.net:7880"
 
     // MARK: - Product
 
-    static let appDisplayName = "AR Assist"
+    static let appDisplayName = "Instant"
+    /// Expert browser UI via Mac Mini Funnel (root HTTPS).
+    static let expertWebURL = URL(string: "https://ggs-macmini.tail3bc01f.ts.net")!
     static let isPremium = false
 }
 
@@ -35,6 +43,19 @@ enum AppConfig {
 enum RuntimeConfig {
     private static let apiKey = "runtime.apiURL"
     private static let liveKitKey = "runtime.liveKitURL"
+    private static let epochKey = "runtime.configEpoch"
+
+    /// Call once at launch so phones drop stale Vercel/Homelab Debug overrides after Mac Mini cutover.
+    static func migrateIfNeeded() {
+        let stored = UserDefaults.standard.integer(forKey: epochKey)
+        if stored == AppConfig.configEpoch {
+            return
+        }
+        // Drop old overrides that pointed at Vercel or Homelab LiveKit.
+        clearOverrides()
+        UserDefaults.standard.set(AppConfig.configEpoch, forKey: epochKey)
+        print("[Config] migrated to epoch=\(AppConfig.configEpoch) api=\(apiURL.absoluteString) livekit=\(liveKitURL)")
+    }
 
     static var apiURL: URL {
         if let raw = UserDefaults.standard.string(forKey: apiKey),
@@ -62,6 +83,10 @@ enum RuntimeConfig {
     static func clearOverrides() {
         UserDefaults.standard.removeObject(forKey: apiKey)
         UserDefaults.standard.removeObject(forKey: liveKitKey)
-        print("[Config] cleared URL overrides")
+        print("[Config] cleared URL overrides → api=\(AppConfig.defaultAPIURL.absoluteString) livekit=\(AppConfig.defaultLiveKitURL)")
+    }
+
+    static func markEpochCurrent() {
+        UserDefaults.standard.set(AppConfig.configEpoch, forKey: epochKey)
     }
 }

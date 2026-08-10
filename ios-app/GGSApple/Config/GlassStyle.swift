@@ -46,6 +46,40 @@ extension View {
             in: RoundedRectangle(cornerRadius: radius, style: .continuous)
         )
     }
+
+    /// Dark tinted blur for call drawer / control chrome (no Liquid Glass).
+    func assistDarkBlur(in shape: some Shape) -> some View {
+        self.background {
+            ZStack {
+                shape.fill(Color.black.opacity(0.55))
+                shape.fill(.ultraThinMaterial)
+            }
+            .environment(\.colorScheme, .dark)
+        }
+    }
+
+    func assistDarkBlurRounded(_ radius: CGFloat = 16) -> some View {
+        assistDarkBlur(in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+    }
+
+    func assistDarkBlurCircle() -> some View {
+        assistDarkBlur(in: Circle())
+    }
+
+    /// Light tinted blur for the annotation tool rail.
+    func assistLightBlur(in shape: some Shape) -> some View {
+        self.background {
+            ZStack {
+                shape.fill(Color.white.opacity(0.55))
+                shape.fill(.thinMaterial)
+            }
+            .environment(\.colorScheme, .light)
+        }
+    }
+
+    func assistLightBlurRounded(_ radius: CGFloat = 16) -> some View {
+        assistLightBlur(in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+    }
 }
 
 /// Circular call-control using system Liquid Glass button style when available.

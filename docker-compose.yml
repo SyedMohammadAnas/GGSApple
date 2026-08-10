@@ -1,4 +1,5 @@
 services:
+  # iMac Lab (Homelab down): media plane only. Session/token APIs live in expert-web.
   livekit:
     image: livekit/livekit-server:latest
     ports:
@@ -12,13 +13,16 @@ services:
     command: --config /livekit.yaml
     restart: unless-stopped
 
+  # Legacy Express API — opt-in only (profile: api). Prefer expert-web for sessions/tokens.
   api:
+    profiles: ['api']
     build: ./backend
     ports:
       - '3000:3000'
     volumes:
-      # Assets only — do not mount ./backend:/app (overwrites image dist/ and breaks startup)
+      # Assets + experiment static page — do not mount all of ./backend (overwrites image dist/)
       - ./backend/assets:/app/assets
+      - ./backend/public:/app/public
     env_file: .env
     depends_on:
       - livekit

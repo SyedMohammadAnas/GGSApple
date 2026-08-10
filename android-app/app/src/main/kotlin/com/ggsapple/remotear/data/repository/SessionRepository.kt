@@ -98,7 +98,7 @@ class SessionRepository @Inject constructor(
             // Include the URL so stale iMac / LAN bake-ins are obvious in the UI.
             val apiUrl = runCatching { runtimeConfigRepository.apiUrlBlocking() }.getOrElse { "?" }
             return SessionApiException(
-                "Cannot reach Assist AR API ($apiUrl). Use https://ggsexpert.vercel.app — Debug backend URL → Reset, or rebuild.",
+                "Cannot reach Assist AR API ($apiUrl). Use https://ggs-macmini.tail3bc01f.ts.net:8443 — Debug backend URL → Reset, or rebuild.",
                 0,
             )
         }

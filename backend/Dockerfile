@@ -7,7 +7,7 @@ RUN npm ci --omit=dev
 
 COPY tsconfig.json ./
 COPY src ./src
-RUN mkdir -p public
+COPY public ./public
 RUN npm install typescript tsx --no-save && npx tsc
 
 EXPOSE 3000

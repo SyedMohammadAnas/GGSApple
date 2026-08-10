@@ -1,0 +1,71 @@
+---
+description: GGSApple — how agents act on Instant iOS, expert-web, homelab
+alwaysApply: true
+---
+
+# GGSApple agent rules
+
+**Full playbook:** Obsidian MCP → `Punctualities/Projects/GGSApple` + `Projects/GGSApple/Agent-Playbook`
+
+## Identify & read (Obsidian MCP)
+
+1. `Projects/GGSApple/GGSApple` — current focus
+2. `Projects/GGSApple/Connectivity` — URLs that must work
+3. `search-vault` — recent `Projects/GGSApple/Progress/` notes on your topic
+
+## Two repos (both may need push)
+
+| Repo | Path | Remote branch | Deploy |
+|------|------|---------------|--------|
+| Monorepo | repo root | `experiment/web-expert` | iOS + backend |
+| Expert web | `expert-web/` | **`main`** on `GGSApple-expert-web` | **Vercel production** |
+
+Nested `expert-web/` has its own `.git`. Monorepo push **does not** deploy expert-web.
+
+## Git identity (Vercel blocks wrong email)
+
+```
+Name:  Syed Mohammad Anas
+Email: 166297310+SyedMohammadAnas@users.noreply.github.com
+```
+
+```bash
+/usr/bin/git config user.email "166297310+SyedMohammadAnas@users.noreply.github.com"
+/usr/bin/git commit -m "fix: one-line summary"
+/usr/bin/git push origin main   # expert-web only for Vercel
+```
+
+No heredoc commits. See vault `Punctualities/Terminal-macOS`.
+
+## Vercel (expert-web)
+
+- Production: `https://ggsexpert.vercel.app` · project `ggs-apple-expert-web`
+- Deploy = push `main` to `GGSApple-expert-web` (not manual `vercel --prod` unless push failed)
+- Env vars: `npx vercel env ls` / `env add` — log **names only** in vault, never values
+- `/api/models` uses bundled manifest — Vercel cannot reach homelab at runtime
+- Full rules: vault `Punctualities/Vercel-Deployments`
+
+## Homelab (you SSH — don't ask Anas)
+
+```bash
+ssh homelab "cd ~/stacks/cgsapple && docker compose up -d --build api"
+curl -s http://100.70.151.71:3000/health
+```
+
+LiveKit WSS: `wss://server-laptop-anassyed.tail3bc01f.ts.net:7880`
+
+## Product constraints
+
+- **Customer** = iOS native (`ios-app/`) — not customer web
+- **Expert** = Next.js on Vercel (`expert-web/`) — not `backend/public/expert/`
+- iOS AR models = **USDZ** (GLB fails in RealityKit)
+- Secrets: vault `Secrets/Projects/GGSApple-Secrets` — never paste values
+
+## After session (Obsidian MCP)
+
+1. Create `Projects/GGSApple/Progress/GGSApple-<topic>-YYYY-MM-DD.md`
+2. Header: `Parent: [[Projects/GGSApple/Runs/<Topic-Hub>]]` — one link only
+3. Update topic hub latest line (plain text, no session wikilink)
+4. Reusable lesson? → update `Punctualities/Projects/GGSApple` or universal Punctualities
+
+Graph hygiene: vault `Punctualities/Vault-Logging` · exclude `-path:Archive` in graph filter.

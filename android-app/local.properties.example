@@ -1,6 +1,6 @@
 sdk.dir=D\:/AndroidStudio
 SUPABASE_URL=https://suuellchcoegerddqyjb.supabase.co
 SUPABASE_ANON_KEY=your-anon-key-here
-# Homelab LiveKit + Vercel expert-web (2026-07-27 cutover — iMac Lab media retired)
-LIVEKIT_URL=wss://server-laptop-anassyed.tail3bc01f.ts.net:7880
-API_URL=https://ggsexpert.vercel.app
+# GGS Mac Mini Funnel API + Serve LiveKit (2026-08-09 cutover)
+LIVEKIT_URL=wss://ggs-macmini.tail3bc01f.ts.net:7880
+API_URL=https://ggs-macmini.tail3bc01f.ts.net:8443

@@ -396,7 +396,7 @@ private fun DebugBackendSheet(
             OutlinedTextField(
                 value = apiUrl,
                 onValueChange = onApiUrlChange,
-                label = { Text("API URL (https://ggsexpert.vercel.app)") },
+                label = { Text("API URL (https://ggs-macmini.tail3bc01f.ts.net:8443)") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
@@ -404,7 +404,7 @@ private fun DebugBackendSheet(
             OutlinedTextField(
                 value = livekitUrl,
                 onValueChange = onLivekitUrlChange,
-                label = { Text("LiveKit URL (wss://…tail…:7880)") },
+                label = { Text("LiveKit URL (wss://ggs-macmini…:7880)") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
