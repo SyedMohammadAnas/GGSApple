@@ -536,11 +536,24 @@ struct ModelPreviewSheet: View {
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
-        NavigationView {
-            VStack(spacing: 20) {
-                Spacer()
+        VStack(spacing: 0) {
+            // Header with drag indicator
+            VStack(spacing: 16) {
+                Capsule()
+                    .fill(Color.white.opacity(0.3))
+                    .frame(width: 36, height: 4)
+                    .padding(.top, 12)
                 
-                // Large model preview
+                Text("3D Model Preview")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.white)
+            }
+            .padding(.bottom, 20)
+            
+            Spacer()
+            
+            // Large model preview
+            VStack(spacing: 20) {
                 Group {
                     if let thumbnailURL = model.thumbnailURL,
                        let url = URL(string: thumbnailURL) {
@@ -548,27 +561,14 @@ struct ModelPreviewSheet: View {
                             image
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
-                                .frame(maxWidth: 300, maxHeight: 300)
+                                .frame(maxWidth: 280, maxHeight: 280)
                                 .clipShape(RoundedRectangle(cornerRadius: 16))
-                                .shadow(radius: 8)
+                                .shadow(color: .black.opacity(0.3), radius: 8)
                         } placeholder: {
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(Color.gray.opacity(0.3))
-                                .frame(width: 300, height: 300)
-                                .overlay {
-                                    ProgressView()
-                                        .tint(.white)
-                                }
+                            modelFallbackView
                         }
                     } else {
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(Color.gray.opacity(0.3))
-                            .frame(width: 300, height: 300)
-                            .overlay {
-                                Image(systemName: model.systemImage)
-                                    .font(.system(size: 60))
-                                    .foregroundStyle(.white.opacity(0.7))
-                            }
+                        modelFallbackView
                     }
                 }
                 
@@ -576,41 +576,68 @@ struct ModelPreviewSheet: View {
                     Text(model.title)
                         .font(.title2.weight(.semibold))
                         .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                    
+                    Text("Tap to place in AR scene")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+            }
+            
+            Spacer()
+            
+            // Action buttons
+            VStack(spacing: 12) {
+                Button("Place This Model") {
+                    onSelect()
+                }
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(.black)
+                .frame(maxWidth: .infinity)
+                .frame(height: 50)
+                .background(AppTheme.orange)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                
+                Button("Cancel") {
+                    dismiss()
+                }
+                .font(.headline)
+                .foregroundStyle(.white.opacity(0.7))
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 40)
+        }
+        .padding(.horizontal, 20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black)
+        .presentationDetents([.large])
+        .presentationDragIndicator(.hidden) // Using custom indicator
+    }
+    
+    private var modelFallbackView: some View {
+        RoundedRectangle(cornerRadius: 16)
+            .fill(
+                LinearGradient(
+                    colors: [Color.white.opacity(0.15), Color.white.opacity(0.05)], 
+                    startPoint: .topLeading, 
+                    endPoint: .bottomTrailing
+                )
+            )
+            .frame(width: 280, height: 280)
+            .overlay {
+                VStack(spacing: 12) {
+                    Image(systemName: model.systemImage)
+                        .font(.system(size: 80, weight: .light))
+                        .foregroundStyle(.white.opacity(0.8))
                     
                     Text("3D Model")
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.7))
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.6))
                 }
-                
-                Spacer()
-                
-                // Action buttons
-                VStack(spacing: 12) {
-                    Button("Place This Model") {
-                        onSelect()
-                    }
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.black)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 50)
-                    .background(AppTheme.orange)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                    .font(.headline)
-                    .foregroundStyle(.white.opacity(0.7))
-                }
-                .padding(.horizontal)
             }
-            .padding()
-            .background(Color.black)
-            .navigationTitle("Model Preview")
-            .navigationBarTitleDisplayMode(.inline)
-            .navigationBarHidden(true)
-        }
-        .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(.white.opacity(0.1), lineWidth: 1)
+            )
     }
 }

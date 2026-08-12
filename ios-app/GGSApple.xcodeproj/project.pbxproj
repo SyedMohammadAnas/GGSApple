@@ -9,7 +9,6 @@
 /* Begin PBXBuildFile section */
 		021B0A0279755D5F923397F5 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEBCC53CFF445D9095F98AA5 /* RootView.swift */; };
 		05FF97DC5CB2505C9417D33C /* CallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE22F17B21645213A63A4997 /* CallView.swift */; };
-		E9XPC4LLV1EW01M2M2M0001 /* ExpertCallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9XPC4LLV1EW01M2M2MREF1 /* ExpertCallView.swift */; };
 		0B3ED975AB405864A415B649 /* SoloARViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1330EB2F146508DA96A1695 /* SoloARViewModel.swift */; };
 		211C3A86A19D529BBFB7B581 /* OfflineAssistSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D896A509F8FE58B991D36D61 /* OfflineAssistSessionView.swift */; };
 		219FF2F86D7858638D01EC66 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 979F82CF648A55A797EFFF3C /* AuthService.swift */; };
@@ -21,21 +20,21 @@
 		7CCB41F0746456B6BFCE1938 /* GlassStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DE77DDF995D54B7852F9ACE /* GlassStyle.swift */; };
 		9A928F94D19D508BB340B357 /* SoloARContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C337C51620D25620B633595F /* SoloARContainer.swift */; };
 		C3B5E373D7925C3BB8BD138D /* SessionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F6DF81A49935117A7E6CFF9 /* SessionService.swift */; };
-		M0D3LC4T5S3RV1C3F1L3E01 /* ModelCatalogService.swift in Sources */ = {isa = PBXBuildFile; fileRef = M0D3LC4T5S3RV1C3F1L3REF /* ModelCatalogService.swift */; };
 		D19FA313E5A756948C40BF0E /* AuthViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8304763AA215C91A4C66271 /* AuthViewModel.swift */; };
 		DEB2155468A751DAA4A22D1E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 62D781FD4D645F0B8ACE2B05 /* Assets.xcassets */; };
 		E4B8C2A19F3D5670AB12CD34 /* CallChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5C9D3B20A4E6781BC23DE45 /* CallChrome.swift */; };
+		E9XPC4LLV1EW01M2M2M0001 /* ExpertCallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9XPC4LLV1EW01M2M2MREF1 /* ExpertCallView.swift */; };
 		EB004D0473B25063AD0AFB8E /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A2CFFB1D7DD5B6DB2063513 /* AuthView.swift */; };
 		EB17391064CF54EDACCE0872 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD6A2F49CF465596B3117C9C /* HomeView.swift */; };
 		F0D3370A01D556F1B65C2D1F /* GGSAppleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A027D4A23BF55B32A01E7F19 /* GGSAppleApp.swift */; };
 		F538B5ECBAB95506A693C758 /* HomeViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EABA4A92CC7A5604BAEDD86D /* HomeViewModel.swift */; };
 		FA3D891BC4325D08B320B53B /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F1C617D239C5217A5C608C5 /* AppTheme.swift */; };
+		M0D3LC4T5S3RV1C3F1L3E01 /* ModelCatalogService.swift in Sources */ = {isa = PBXBuildFile; fileRef = M0D3LC4T5S3RV1C3F1L3REF /* ModelCatalogService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		135208A55E5457919B250BCD /* GoogleOAuth.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = GoogleOAuth.plist; sourceTree = "<group>"; };
 		3F6DF81A49935117A7E6CFF9 /* SessionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionService.swift; sourceTree = "<group>"; };
-		M0D3LC4T5S3RV1C3F1L3REF /* ModelCatalogService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelCatalogService.swift; sourceTree = "<group>"; };
 		4DE77DDF995D54B7852F9ACE /* GlassStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassStyle.swift; sourceTree = "<group>"; };
 		62D781FD4D645F0B8ACE2B05 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		7F11B21BE93F5101B609FF47 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -52,10 +51,11 @@
 		D8304763AA215C91A4C66271 /* AuthViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthViewModel.swift; sourceTree = "<group>"; };
 		D896A509F8FE58B991D36D61 /* OfflineAssistSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineAssistSessionView.swift; sourceTree = "<group>"; };
 		DD6A2F49CF465596B3117C9C /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		E9XPC4LLV1EW01M2M2MREF1 /* ExpertCallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpertCallView.swift; sourceTree = "<group>"; };
 		EABA4A92CC7A5604BAEDD86D /* HomeViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeViewModel.swift; sourceTree = "<group>"; };
 		EE22F17B21645213A63A4997 /* CallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallView.swift; sourceTree = "<group>"; };
-		E9XPC4LLV1EW01M2M2MREF1 /* ExpertCallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpertCallView.swift; sourceTree = "<group>"; };
 		F5C9D3B20A4E6781BC23DE45 /* CallChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallChrome.swift; sourceTree = "<group>"; };
+		M0D3LC4T5S3RV1C3F1L3REF /* ModelCatalogService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelCatalogService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
