@@ -434,7 +434,7 @@ struct AssetsDrawerPanel: View {
         let isPlaced = placedModelId == item.id
         let isHighlighted = isSelected || isPlaced
         
-        VStack(spacing: 8) {
+        return VStack(spacing: 8) {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color.white.opacity(isHighlighted ? 0.16 : 0.08))
                 .frame(height: mode == .peek ? 72 : 96)
