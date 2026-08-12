@@ -32,8 +32,6 @@ struct ExpertCallView: View {
     @State private var modelRotationY: Double = 0
     @State private var isLoadingModels = true
     @State private var modelError: String?
-    @State private var isLoadingModels = false
-    @State private var modelLoadError: String?
     
     // Screenshot capture
     @State private var screenshotImage: UIImage?
@@ -340,7 +338,7 @@ struct ExpertCallView: View {
             let models = try await ModelCatalogService.fetchCatalog()
             print("[ExpertCall] received \(models.count) models from API")
             
-            let items = models.compactMap { model in
+            let items: [AssetPlaceholderItem] = models.compactMap { model in
                 guard let url = model.assetURL else { 
                     print("[ExpertCall] skipping model \(model.id) - no URL")
                     return nil 
