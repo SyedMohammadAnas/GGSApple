@@ -61,6 +61,8 @@ struct CallBottomDrawer: View {
     /// Full catalog — shown in expanded drawer for customer model pick.
     var catalogAssetItems: [AssetPlaceholderItem] = []
     var selectedModelId: String? = nil
+    var isLoadingModels: Bool = false
+    var modelError: String? = nil
     var onSelectAsset: ((AssetPlaceholderItem) -> Void)? = nil
     var onPreviewAsset: ((AssetPlaceholderItem) -> Void)? = nil
     @State private var dragTranslation: CGFloat = 0
@@ -147,6 +149,8 @@ struct CallBottomDrawer: View {
                         recentItems: recentAssetItems,
                         catalogItems: catalogAssetItems,
                         selectedModelId: selectedModelId,
+                        isLoadingModels: isLoadingModels,
+                        modelError: modelError,
                         onSelectItem: onSelectAsset,
                         onPreviewItem: onPreviewAsset,
                         onFilterTap: { showFilterSheet = true }
@@ -160,6 +164,8 @@ struct CallBottomDrawer: View {
                         recentItems: recentAssetItems,
                         catalogItems: catalogAssetItems,
                         selectedModelId: selectedModelId,
+                        isLoadingModels: isLoadingModels,
+                        modelError: modelError,
                         onSelectItem: onSelectAsset,
                         onPreviewItem: onPreviewAsset,
                         onFilterTap: { showFilterSheet = true }
@@ -289,6 +295,8 @@ struct AssetsDrawerPanel: View {
     var recentItems: [AssetPlaceholderItem] = []
     var catalogItems: [AssetPlaceholderItem] = []
     var selectedModelId: String? = nil
+    var isLoadingModels: Bool = false
+    var modelError: String? = nil
     var onSelectItem: ((AssetPlaceholderItem) -> Void)? = nil
     var onPreviewItem: ((AssetPlaceholderItem) -> Void)? = nil
     var onFilterTap: () -> Void
@@ -312,12 +320,34 @@ struct AssetsDrawerPanel: View {
             }
 
             ScrollView {
-                if filteredItems.isEmpty {
-                    Text(mode == .full ? "Loading models…" : "No models yet — expand assets")
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.45))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.top, 4)
+                if isLoadingModels {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .tint(.white.opacity(0.7))
+                            .scaleEffect(0.8)
+                        Text("Loading 3D models…")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 4)
+                } else if filteredItems.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(mode == .full ? "No 3D models available" : "No models yet")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.6))
+                        if let error = modelError {
+                            Text(error)
+                                .font(.caption2)
+                                .foregroundStyle(.orange.opacity(0.8))
+                        } else if mode != .full {
+                            Text("Expand to browse catalog")
+                                .font(.caption2)
+                                .foregroundStyle(.white.opacity(0.4))
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 4)
                 } else {
                     LazyVGrid(columns: columns, spacing: 10) {
                         ForEach(filteredItems) { item in

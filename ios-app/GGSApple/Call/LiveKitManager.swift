@@ -38,7 +38,7 @@ final class LiveKitManager: NSObject, ObservableObject {
     private static let rearCameraOptions = CameraCaptureOptions(position: .back)
 
     /// LiveKit data topic shared with the web expert page.
-    static let annotationTopic = "annotations"
+    nonisolated(unsafe) static let annotationTopic = "annotations"
 
     /// Customer POV composites (ARView snapshot: camera + RealityKit marks), portrait 540x960.
     private static let arBufferOptions = BufferCaptureOptions(

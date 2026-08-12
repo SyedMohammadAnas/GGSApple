@@ -30,6 +30,10 @@ struct ExpertCallView: View {
     @State private var modelLoaded = false
     @State private var modelScale: Double = 1.0
     @State private var modelRotationY: Double = 0
+    @State private var isLoadingModels = true
+    @State private var modelError: String?
+    @State private var isLoadingModels = false
+    @State private var modelLoadError: String?
     
     // Screenshot capture
     @State private var screenshotImage: UIImage?
@@ -98,6 +102,8 @@ struct ExpertCallView: View {
                 recentAssetItems: recentItems,
                 catalogAssetItems: catalogItems,
                 selectedModelId: selectedModelId,
+                isLoadingModels: isLoadingModels,
+                modelError: modelError,
                 onSelectAsset: { item in
                     Task { await selectModel(item) }
                 },
@@ -326,11 +332,15 @@ struct ExpertCallView: View {
     // MARK: - Models
 
     private func fetchCatalog() async {
+        isLoadingModels = true
+        modelError = nil
         print("[ExpertCall] fetchCatalog starting - API URL: \(RuntimeConfig.apiURL.absoluteString)")
+        
         do {
             let models = try await ModelCatalogService.fetchCatalog()
             print("[ExpertCall] received \(models.count) models from API")
-            catalogItems = models.compactMap { model in
+            
+            let items = models.compactMap { model in
                 guard let url = model.assetURL else { 
                     print("[ExpertCall] skipping model \(model.id) - no URL")
                     return nil 
@@ -339,19 +349,54 @@ struct ExpertCallView: View {
                 return AssetPlaceholderItem(
                     id: model.id,
                     title: model.name,
-                    systemImage: "cube.fill", // Fallback for items without thumbnails
+                    systemImage: "cube.fill",
                     modelURL: url,
                     thumbnailURL: model.thumbnailUrl
                 )
             }
+            
+            catalogItems = items
+            isLoadingModels = false
             print("[ExpertCall] final catalog count=\(catalogItems.count)")
+            
         } catch {
-            print("[ExpertCall] catalog FAILED: \(error)")
-            // Add more detailed error info
-            if let urlError = error as? URLError {
-                print("[ExpertCall] URLError code: \(urlError.code.rawValue)")
-                print("[ExpertCall] URLError description: \(urlError.localizedDescription)")
-            }
+            print("[ExpertCall] API catalog FAILED: \(error), loading fallback models")
+            
+            // Fallback to hardcoded models
+            catalogItems = [
+                AssetPlaceholderItem(
+                    id: "duck_v1",
+                    title: "Rubber Duck",
+                    systemImage: "cube.fill",
+                    modelURL: URL(string: "http://100.83.95.8:3000/assets/models/duck_v1_ar.usdz"),
+                    thumbnailURL: nil
+                ),
+                AssetPlaceholderItem(
+                    id: "engine_v1", 
+                    title: "Car Engine",
+                    systemImage: "cube.fill",
+                    modelURL: URL(string: "http://100.83.95.8:3000/assets/models/engine_draco_ar.usdz"),
+                    thumbnailURL: nil
+                ),
+                AssetPlaceholderItem(
+                    id: "tire_v1",
+                    title: "Tyre", 
+                    systemImage: "cube.fill",
+                    modelURL: URL(string: "http://100.83.95.8:3000/assets/models/tire_draco_ar.usdz"),
+                    thumbnailURL: nil
+                ),
+                AssetPlaceholderItem(
+                    id: "sparkplug_v1",
+                    title: "Spark Plug",
+                    systemImage: "cube.fill", 
+                    modelURL: URL(string: "http://100.83.95.8:3000/assets/models/sparkplug_draco_ar.usdz"),
+                    thumbnailURL: nil
+                )
+            ]
+            
+            isLoadingModels = false
+            modelError = "Using offline models"
+            print("[ExpertCall] loaded \(catalogItems.count) fallback models")
         }
     }
 
