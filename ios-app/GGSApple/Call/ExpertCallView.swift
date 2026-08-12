@@ -326,7 +326,7 @@ struct ExpertCallView: View {
     // MARK: - Models
 
     private func fetchCatalog() async {
-        print("[ExpertCall] fetchCatalog starting - API URL: \(RuntimeConfig.apiURL?.absoluteString ?? "nil")")
+        print("[ExpertCall] fetchCatalog starting - API URL: \(RuntimeConfig.apiURL.absoluteString)")
         do {
             let models = try await ModelCatalogService.fetchCatalog()
             print("[ExpertCall] received \(models.count) models from API")
