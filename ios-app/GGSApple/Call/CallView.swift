@@ -22,6 +22,9 @@ struct CallView: View {
     /// Avoid double leave when LiveKit signal + status poll both fire.
     @State private var didLeaveCall = false
     @State private var statusPollTask: Task<Void, Never>?
+    
+    // Model loading feedback for expert actions
+    @State private var expertLoadingModel: String?
 
     private var chromeVisible: Bool { !showSurfaceCoach }
 
@@ -75,6 +78,10 @@ struct CallView: View {
             if chromeVisible {
                 VStack {
                     topBar
+                    if let modelName = expertLoadingModel {
+                        expertLoadingBadge(modelName)
+                            .padding(.top, 8)
+                    }
                     Spacer()
                 }
                 .padding(.horizontal, 12)
@@ -135,6 +142,10 @@ struct CallView: View {
             sessionStartedAt = Date()
             showSurfaceCoach = true
             arViewModel.worldBridge?.localRole = .customer
+            // Expert model loading feedback
+            arViewModel.worldBridge?.onExpertLoadingModel = { modelName in
+                expertLoadingModel = modelName
+            }
             // Web expert draws → raycast into this customer's AR space.
             let vm = arViewModel
             liveKit.onAnnotationReceived = { msg in
@@ -176,6 +187,29 @@ struct CallView: View {
             CallScreenshotButton {
                 captureCleanScreenshot()
             }
+        }
+    }
+    
+    private func expertLoadingBadge(_ modelName: String) -> some View {
+        HStack(spacing: 8) {
+            ProgressView()
+                .tint(AppTheme.orange)
+                .scaleEffect(0.8)
+            
+            Text("Expert loading \(modelName)")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background {
+            Capsule()
+                .fill(.ultraThinMaterial.opacity(0.8))
+                .background(Capsule().fill(Color.black.opacity(0.3)))
+        }
+        .overlay {
+            Capsule()
+                .strokeBorder(AppTheme.orange.opacity(0.3), lineWidth: 1)
         }
     }
 

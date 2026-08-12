@@ -395,6 +395,8 @@ final class OfflineWorldBridge: NSObject {
     private var loadingModelId: String?
     /// UI refresh when expert sends load_model / place_model.
     var onModelCatalogChanged: ((String, String) -> Void)?
+    /// Notify UI when expert is loading/cancelling models.
+    var onExpertLoadingModel: ((String?) -> Void)?
     /// World anchor for the single active placed model.
     private var modelAnchor: AnchorEntity?
     private var modelRotationX: Float = 0
@@ -498,10 +500,26 @@ final class OfflineWorldBridge: NSObject {
                   let url = URL(string: urlString)
             else { return }
             let name = msg["name"] as? String ?? modelId
+            // Notify UI about expert loading model
+            onExpertLoadingModel?(name)
             // Expert-originated loads should not re-broadcast to the wire.
             loadModel(modelId: modelId, url: url, name: name)
+        case "cancel_model":
+            // Expert cancelled model loading
+            onExpertLoadingModel?(nil)
+        case "remove_model":
+            // Expert removed the placed model
+            removeCurrentModel()
+            // Haptic feedback for removal
+            let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+            impactFeedback.impactOccurred()
         case "place_model":
             guard let x = Self.jsonDouble(msg["x"]), let y = Self.jsonDouble(msg["y"]) else { return }
+            // Clear loading badge when model is placed
+            onExpertLoadingModel?(nil)
+            // Haptic feedback for placement
+            let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+            impactFeedback.impactOccurred()
             enqueueOrPlaceModel(at: screenPoint(nx: x, ny: y))
         case "transform":
             let rotX = Float(Self.jsonDouble(msg["rotationX"]) ?? 0)
@@ -749,6 +767,16 @@ final class OfflineWorldBridge: NSObject {
         modelAnchor?.removeFromParent()
         modelAnchor = nil
         print("[OfflineAssist] model removed")
+    }
+    
+    /// Remove the currently placed model (called by expert remove command)
+    private func removeCurrentModel() {
+        modelAnchor?.removeFromParent()
+        modelAnchor = nil
+        modelTemplate = nil
+        loadedModelId = nil
+        loadedModelName = nil
+        print("[OfflineAssist] model removed by expert")
     }
 
     /// Cache model under Documents/models/{id}.{ext} — RealityKit needs USDZ, not GLB.
