@@ -242,10 +242,44 @@ final class OfflineAssistViewModel {
                 )
             }
             catalogLoadError = nil
-            print("[OfflineAssist] catalog loaded count=\(catalogItems.count)")
+            print("[OfflineAssist] API catalog loaded count=\(catalogItems.count)")
         } catch {
-            catalogLoadError = error.localizedDescription
-            print("[OfflineAssist] catalog FAILED: \(error.localizedDescription)")
+            print("[OfflineAssist] API catalog FAILED: \(error), loading offline models")
+            
+            // Fallback to offline models for tutorial mode
+            catalogItems = [
+                AssetPlaceholderItem(
+                    id: "duck_v1",
+                    title: "Rubber Duck",
+                    systemImage: "cube.fill",
+                    modelURL: URL(string: "http://100.83.95.8:3000/assets/models/duck_v1_ar.usdz"),
+                    thumbnailURL: nil
+                ),
+                AssetPlaceholderItem(
+                    id: "engine_v1", 
+                    title: "Car Engine",
+                    systemImage: "cube.fill",
+                    modelURL: URL(string: "http://100.83.95.8:3000/assets/models/engine_draco_ar.usdz"),
+                    thumbnailURL: nil
+                ),
+                AssetPlaceholderItem(
+                    id: "tire_v1",
+                    title: "Tyre", 
+                    systemImage: "cube.fill",
+                    modelURL: URL(string: "http://100.83.95.8:3000/assets/models/tire_draco_ar.usdz"),
+                    thumbnailURL: nil
+                ),
+                AssetPlaceholderItem(
+                    id: "sparkplug_v1",
+                    title: "Spark Plug",
+                    systemImage: "cube.fill", 
+                    modelURL: URL(string: "http://100.83.95.8:3000/assets/models/sparkplug_draco_ar.usdz"),
+                    thumbnailURL: nil
+                )
+            ]
+            
+            catalogLoadError = "Using offline models for tutorial"
+            print("[OfflineAssist] loaded \(catalogItems.count) offline models for tutorial mode")
         }
     }
 
