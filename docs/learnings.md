@@ -4,6 +4,14 @@ Notes from debugging sessions, fixes, and infrastructure setup. Add new entries 
 
 ---
 
+## Vault / runtime sync (2026-08-12)
+
+- **Standing facts:** LiveKit + API + expert lab runtime is **GGS Mac Mini** Funnel/Serve (`ggs-macmini`), not Homelab. Working git branch is **`main`** (both repos).
+- **Agent rule:** when URLs, hosts, or branches change, update vault Connectivity / Company runtime / Punctualities / `.cursor/rules` **in the same turn** — do not leave product notes lagging (failure mode: Homelab still listed in Connectivity while Mac Mini was live).
+- Vault log: `Projects/GGSApple/Progress/Vault-Main-MacMini-Sync-2026-08-12`.
+
+---
+
 ## Native Android — new Samsung phones (2026-07-21 / landed 2026-07-22)
 
 Verified on Samsung A35 (SM-A356E) + S24 FE (SM-S721B), both Android 16. Vault: SergantSwaggBase `Progress/GGSApple-New-Phones-AR-Fixes-2026-07-22` + pitfalls under `Projects/GGSApple/`.

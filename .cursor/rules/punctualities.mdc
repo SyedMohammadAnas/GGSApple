@@ -12,13 +12,14 @@ alwaysApply: true
 1. `read-note` → `Punctualities/00-Read-First`
 2. `read-note` → `Punctualities/How-Agents-Act` — identify project, open its punctuality
 3. `read-note` → `Punctualities/Projects/<project>.md` (e.g. GGSApple)
-4. `search-vault` for recent Progress on your topic
+4. `search-vault` for recent Progress — prefer newest `updated:`; check `Company/` if product notes look stale
 
 ## How to act
 
-- **Investigate and execute** — SSH homelab, deploy, fix root causes; don't tell Anas to run steps you can run
+- **Investigate and execute** — SSH runtime hosts, deploy, fix root causes; don't tell Anas to run steps you can run
 - **Minimize scope** — smallest correct diff
-- **Log without being asked** — session note + update Punctualities when you learn something reusable
+- **Update vault while working** — when URLs, hosts, branches, or priorities change, edit Connectivity / hubs / Punctualities **in the same turn** (not only at session end)
+- **Log without being asked** — session Progress + Punctualities when reusable
 - **No emojis** in docs/vault; **no `npm run dev`**; **commit only when Anas asks**
 
 ## Update punctualities (mandatory)
@@ -45,5 +46,5 @@ One-time bugs → `Lab/Pitfalls/`, not Punctualities.
 | MOC | `Punctualities/Punctualities` |
 | How to act by project | `Punctualities/How-Agents-Act` |
 | Maintain rules | `Punctualities/Maintaining-Punctualities` |
-| Vault logging | `Punctualities/Vault-Logging` |
+| Vault logging (live updates) | `Punctualities/Vault-Logging` |
 | Vercel deploys | `Punctualities/Vercel-Deployments` |
