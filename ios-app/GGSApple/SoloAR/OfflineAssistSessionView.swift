@@ -215,7 +215,8 @@ final class OfflineAssistViewModel {
             id: id,
             title: name,
             systemImage: "cube.fill",
-            modelURL: url
+            modelURL: url,
+            thumbnailURL: nil
         )
         recentAssetItems.removeAll { $0.id == id }
         recentAssetItems.insert(item, at: 0)
@@ -236,7 +237,8 @@ final class OfflineAssistViewModel {
                     id: model.id,
                     title: model.name,
                     systemImage: "cube.fill",
-                    modelURL: url
+                    modelURL: url,
+                    thumbnailURL: model.thumbnailUrl
                 )
             }
             catalogLoadError = nil

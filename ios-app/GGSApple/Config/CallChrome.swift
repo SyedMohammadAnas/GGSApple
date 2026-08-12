@@ -62,6 +62,7 @@ struct CallBottomDrawer: View {
     var catalogAssetItems: [AssetPlaceholderItem] = []
     var selectedModelId: String? = nil
     var onSelectAsset: ((AssetPlaceholderItem) -> Void)? = nil
+    var onPreviewAsset: ((AssetPlaceholderItem) -> Void)? = nil
     @State private var dragTranslation: CGFloat = 0
     @State private var searchText = ""
     @State private var selectedCategory = AssetCategory.tempCategories[0]
@@ -147,6 +148,7 @@ struct CallBottomDrawer: View {
                         catalogItems: catalogAssetItems,
                         selectedModelId: selectedModelId,
                         onSelectItem: onSelectAsset,
+                        onPreviewItem: onPreviewAsset,
                         onFilterTap: { showFilterSheet = true }
                     )
                 } else {
@@ -159,6 +161,7 @@ struct CallBottomDrawer: View {
                         catalogItems: catalogAssetItems,
                         selectedModelId: selectedModelId,
                         onSelectItem: onSelectAsset,
+                        onPreviewItem: onPreviewAsset,
                         onFilterTap: { showFilterSheet = true }
                     )
                 }
@@ -276,6 +279,7 @@ struct AssetPlaceholderItem: Identifiable {
     let title: String
     let systemImage: String
     var modelURL: URL? = nil
+    var thumbnailURL: String? = nil
 }
 
 struct AssetsDrawerPanel: View {
@@ -286,6 +290,7 @@ struct AssetsDrawerPanel: View {
     var catalogItems: [AssetPlaceholderItem] = []
     var selectedModelId: String? = nil
     var onSelectItem: ((AssetPlaceholderItem) -> Void)? = nil
+    var onPreviewItem: ((AssetPlaceholderItem) -> Void)? = nil
     var onFilterTap: () -> Void
 
     private let columns = [
@@ -387,34 +392,53 @@ struct AssetsDrawerPanel: View {
     }
 
     private func assetTile(_ item: AssetPlaceholderItem) -> some View {
-        Button {
-            onSelectItem?(item)
-        } label: {
-            VStack(spacing: 8) {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.white.opacity(selectedModelId == item.id ? 0.16 : 0.08))
-                    .frame(height: mode == .peek ? 72 : 96)
-                    .overlay {
-                        Image(systemName: item.systemImage)
-                            .font(.title3)
-                            .foregroundStyle(
-                                selectedModelId == item.id ? AppTheme.orange : .white.opacity(0.4)
-                            )
-                    }
-                    .overlay {
-                        if selectedModelId == item.id {
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(AppTheme.orange, lineWidth: 2)
+        VStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.white.opacity(selectedModelId == item.id ? 0.16 : 0.08))
+                .frame(height: mode == .peek ? 72 : 96)
+                .overlay {
+                    Group {
+                        if let thumbnailURL = item.thumbnailURL, 
+                           let url = URL(string: thumbnailURL) {
+                            AsyncImage(url: url) { image in
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .clipped()
+                            } placeholder: {
+                                Image(systemName: item.systemImage)
+                                    .font(.title3)
+                                    .foregroundStyle(.white.opacity(0.7))
+                            }
+                        } else {
+                            Image(systemName: item.systemImage)
+                                .font(.title3)
+                                .foregroundStyle(.white.opacity(0.7))
                         }
                     }
+                        .foregroundStyle(
+                            selectedModelId == item.id ? AppTheme.orange : .white.opacity(0.4)
+                        )
+                }
+                .overlay {
+                    if selectedModelId == item.id {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(AppTheme.orange, lineWidth: 2)
+                    }
+                }
 
-                Text(item.title)
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.7))
-                    .lineLimit(1)
-            }
+            Text(item.title)
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.7))
+                .lineLimit(1)
         }
-        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onSelectItem?(item)
+        }
+        .onLongPressGesture {
+            onPreviewItem?(item)
+        }
     }
 }
 

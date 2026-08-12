@@ -30,6 +30,13 @@ struct ExpertCallView: View {
     @State private var modelLoaded = false
     @State private var modelScale: Double = 1.0
     @State private var modelRotationY: Double = 0
+    
+    // Screenshot capture
+    @State private var screenshotImage: UIImage?
+    
+    // Model preview
+    @State private var showModelPreview = false
+    @State private var previewModel: AssetPlaceholderItem?
 
     private let expertRole = "expert"
 
@@ -37,10 +44,11 @@ struct ExpertCallView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            // Customer POV video
+            // Customer POV video - full screen coverage
             Group {
                 if let track = liveKit.remoteVideoTrack {
-                    SwiftUIVideoView(track, layoutMode: .fit)
+                    SwiftUIVideoView(track, layoutMode: .fill)
+                        .clipped()
                         .background(
                             GeometryReader { geo in
                                 Color.clear.preference(key: StageSizeKey.self, value: geo.size)
@@ -55,7 +63,7 @@ struct ExpertCallView: View {
                     }
                 }
             }
-            .ignoresSafeArea()
+            .ignoresSafeArea(.all)
             .onPreferenceChange(StageSizeKey.self) { stageSize = $0 }
 
             // Hit layer for annotate / place / transform
@@ -92,6 +100,10 @@ struct ExpertCallView: View {
                 selectedModelId: selectedModelId,
                 onSelectAsset: { item in
                     Task { await selectModel(item) }
+                },
+                onPreviewAsset: { item in
+                    previewModel = item
+                    showModelPreview = true
                 }
             )
             .zIndex(4)
@@ -103,6 +115,14 @@ struct ExpertCallView: View {
                     .padding()
                     .assistGlassRounded(12)
                     .zIndex(10)
+            }
+        }
+        .sheet(isPresented: $showModelPreview) {
+            if let model = previewModel {
+                ModelPreviewSheet(model: model) {
+                    Task { await selectModel(model) }
+                    showModelPreview = false
+                }
             }
         }
         .preferredColorScheme(.dark)
@@ -150,13 +170,9 @@ struct ExpertCallView: View {
         HStack {
             ARSessionTimerCapsule(startedAt: sessionStartedAt)
             Spacer()
-            Text("Expert")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(AppTheme.orange)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(AppTheme.panel)
-                .clipShape(Capsule())
+            CallScreenshotButton {
+                captureExpertScreenshot()
+            }
         }
     }
 
@@ -316,8 +332,9 @@ struct ExpertCallView: View {
                 return AssetPlaceholderItem(
                     id: model.id,
                     title: model.name,
-                    systemImage: "cube.fill",
-                    modelURL: url
+                    systemImage: "cube.fill", // Fallback for items without thumbnails
+                    modelURL: url,
+                    thumbnailURL: model.thumbnailUrl
                 )
             }
             print("[ExpertCall] catalog count=\(catalogItems.count)")
@@ -360,6 +377,30 @@ struct ExpertCallView: View {
             ],
             reliable: false
         )
+    }
+
+    // MARK: - Screenshot
+    
+    /// Expert view screenshot — captures current POV video with annotations
+    private func captureExpertScreenshot() {
+        print("[ExpertCall] screenshot requested")
+        
+        // Get the main window's root view controller to capture the screen
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = windowScene.windows.first else {
+            print("[ExpertCall] screenshot failed - no window")
+            return
+        }
+        
+        // Capture the current screen
+        let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
+        let image = renderer.image { context in
+            window.layer.render(in: context.cgContext)
+        }
+        
+        // Save to photo library
+        CallScreenshotButton.saveToPhotos(image)
+        screenshotImage = image
     }
 
     // MARK: - LiveKit
@@ -430,5 +471,91 @@ private struct StageSizeKey: PreferenceKey {
     static var defaultValue: CGSize = .zero
     static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
         value = nextValue()
+    }
+}
+
+/// Modal sheet for previewing and selecting 3D models
+struct ModelPreviewSheet: View {
+    let model: AssetPlaceholderItem
+    let onSelect: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 20) {
+                Spacer()
+                
+                // Large model preview
+                Group {
+                    if let thumbnailURL = model.thumbnailURL,
+                       let url = URL(string: thumbnailURL) {
+                        AsyncImage(url: url) { image in
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(maxWidth: 300, maxHeight: 300)
+                                .clipShape(RoundedRectangle(cornerRadius: 16))
+                                .shadow(radius: 8)
+                        } placeholder: {
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(Color.gray.opacity(0.3))
+                                .frame(width: 300, height: 300)
+                                .overlay {
+                                    ProgressView()
+                                        .tint(.white)
+                                }
+                        }
+                    } else {
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(Color.gray.opacity(0.3))
+                            .frame(width: 300, height: 300)
+                            .overlay {
+                                Image(systemName: model.systemImage)
+                                    .font(.system(size: 60))
+                                    .foregroundStyle(.white.opacity(0.7))
+                            }
+                    }
+                }
+                
+                VStack(spacing: 8) {
+                    Text(model.title)
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(.white)
+                    
+                    Text("3D Model")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.7))
+                }
+                
+                Spacer()
+                
+                // Action buttons
+                VStack(spacing: 12) {
+                    Button("Place This Model") {
+                        onSelect()
+                    }
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.black)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .background(AppTheme.orange)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                    .font(.headline)
+                    .foregroundStyle(.white.opacity(0.7))
+                }
+                .padding(.horizontal)
+            }
+            .padding()
+            .background(Color.black)
+            .navigationTitle("Model Preview")
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarHidden(true)
+        }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
     }
 }
