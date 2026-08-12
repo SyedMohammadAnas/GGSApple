@@ -399,7 +399,7 @@ struct ExpertCallView: View {
         }
         
         // Save to photo library
-        CallScreenshotButton.saveToPhotos(image)
+        CallScreenshotCapture.saveToPhotos(image)
         screenshotImage = image
     }
 
