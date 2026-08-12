@@ -6,8 +6,6 @@ import { Router } from 'express';
 import multer from 'multer';
 import { fileURLToPath } from 'url';
 
-import { requireAuth } from '../middleware/auth.js';
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -147,7 +145,8 @@ export const uploadModel = [
 
 const router = Router();
 
-router.get('/', requireAuth, async (req, res) => {
+// Catalog is public — Instant ModelCatalogService and expert UIs fetch without a token.
+router.get('/', async (req, res) => {
   const baseUrl = `${req.protocol}://${req.get('host')}`;
   const models = await listModels(baseUrl);
   res.json({ models });

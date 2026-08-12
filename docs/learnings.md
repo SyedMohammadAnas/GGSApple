@@ -6,9 +6,10 @@ Notes from debugging sessions, fixes, and infrastructure setup. Add new entries 
 
 ## Vault / runtime sync (2026-08-12)
 
-- **Standing facts:** LiveKit + API + expert lab runtime is **GGS Mac Mini** Funnel/Serve (`ggs-macmini`), not Homelab. Working git branch is **`main`** (both repos).
+- **Standing facts:** LiveKit + API + expert lab runtime is **GGS Mac Mini** Funnel/Serve (`ggs-macmini`), not Homelab. Working git branch is **`main`** (both repos) for production-lab; feature work for native Expert is on **`m2m`**.
+- **m2m (2026-08-12):** One Instant app Customer/Expert toggle (gated); ExpertCallView views POV + annotates. Temporary lab stack = **anas-imaclab** Docker LiveKit+API when Mac Mini offline (`livekit.yaml` node_ip `100.83.95.8`, AppConfig epoch 6).
 - **Agent rule:** when URLs, hosts, or branches change, update vault Connectivity / Company runtime / Punctualities / `.cursor/rules` **in the same turn** — do not leave product notes lagging (failure mode: Homelab still listed in Connectivity while Mac Mini was live).
-- Vault log: `Projects/GGSApple/Progress/Vault-Main-MacMini-Sync-2026-08-12`.
+- Vault log: `Projects/GGSApple/Progress/m2m-Native-Expert-Switch-2026-08-12`.
 
 ---
 

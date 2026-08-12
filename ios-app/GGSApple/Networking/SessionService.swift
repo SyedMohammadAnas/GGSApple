@@ -1,13 +1,19 @@
 import Foundation
 import Auth
 
-/// Instant native app is customer-only (experts use Assist AR web).
+/// Instant app mode — Customer streams POV; Expert views + annotates (m2m).
 enum AppMode: String, CaseIterable, Identifiable {
     case customer
+    case expert
 
     var id: String { rawValue }
 
-    var title: String { "Customer" }
+    var title: String {
+        switch self {
+        case .customer: return "Customer"
+        case .expert: return "Expert"
+        }
+    }
 }
 
 struct SessionCredentials: Equatable {
@@ -64,6 +70,17 @@ final class SessionService {
             body: [:] as [String: String]
         )
         return try decodeCredentials(json, role: .customer)
+    }
+
+    /// Expert joins (or creates) a session for the customer's public ID.
+    func joinById(targetPublicId: String, accessToken: String) async throws -> SessionCredentials {
+        let digits = PublicIdFormat.digitsOnly(targetPublicId)
+        let json = try await postJSON(
+            path: "/api/sessions/join-by-id",
+            accessToken: accessToken,
+            body: ["targetPublicId": digits]
+        )
+        return try decodeCredentials(json, role: .expert)
     }
 
     func endSession(sessionId: String, accessToken: String) async {
@@ -202,5 +219,13 @@ enum PublicIdFormat {
 
     static func digitsOnly(_ raw: String) -> String {
         raw.filter(\.isNumber)
+    }
+}
+
+extension Profile {
+    /// Expert home toggle + join-by-id are gated to these roles.
+    var canActAsExpert: Bool {
+        let r = (role ?? "").lowercased()
+        return r == "expert" || r == "admin" || r == "technician"
     }
 }

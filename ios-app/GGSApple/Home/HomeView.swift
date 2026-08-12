@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// AR Assist home — single non-scrolling viewport matching mockups.
+/// AR Assist home — Customer / Expert switch (Figma m2m).
 struct HomeView: View {
     @Bindable var authViewModel: AuthViewModel
     let profile: Profile?
@@ -44,7 +44,7 @@ struct HomeView: View {
         .onChange(of: home.showSoloAR) { _, open in
             if open {
                 home.stopWatchers()
-            } else {
+            } else if home.appMode == .customer {
                 home.startCustomerWatcherIfNeeded()
             }
         }
@@ -55,8 +55,16 @@ struct HomeView: View {
             get: { home.activeCall.map(CallRoute.init) },
             set: { if $0 == nil { Task { await home.endCallAndReset() } } }
         )) { route in
-            CallView(credentials: route.credentials) {
-                Task { await home.endCallAndReset() }
+            Group {
+                if route.credentials.role == .expert {
+                    ExpertCallView(credentials: route.credentials) {
+                        Task { await home.endCallAndReset() }
+                    }
+                } else {
+                    CallView(credentials: route.credentials) {
+                        Task { await home.endCallAndReset() }
+                    }
+                }
             }
         }
         .sheet(isPresented: $home.showDebugSheet) {
@@ -84,6 +92,21 @@ struct HomeView: View {
 
             Spacer()
 
+            // Expert/customer toggle — gated; hidden for pure customers.
+            if home.canUseExpertMode {
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { home.appMode == .expert },
+                        set: { home.setAppMode($0 ? .expert : .customer) }
+                    )
+                )
+                .labelsHidden()
+                .tint(AppTheme.orange)
+                .disabled(home.activeCall != nil)
+                .accessibilityLabel("Expert mode")
+            }
+
             Menu {
                 Button("Debug backend URL") { home.showDebugSheet = true }
                 Button("Clear cache") { home.clearCachePreservingAuth() }
@@ -105,36 +128,39 @@ struct HomeView: View {
         .padding(.vertical, 10)
     }
 
-    // MARK: - Hero (no border)
+    // MARK: - Hero
 
     private var hero: some View {
         Image("AppPreview")
             .resizable()
             .scaledToFit()
-            // ~20% smaller than filling the hero slot.
             .scaleEffect(0.8)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    // MARK: - Customer body (Assist AR experts are web-only)
+    // MARK: - Mode body
 
     @ViewBuilder
     private var modeBody: some View {
-        customerBlock
+        if home.appMode == .expert {
+            expertBlock
+        } else {
+            customerBlock
+        }
 
         if !home.statusMessage.isEmpty && !home.statusMessage.hasPrefix("ID copied") {
             Text(home.statusMessage)
                 .font(.footnote)
                 .foregroundStyle(AppTheme.orange)
                 .multilineTextAlignment(.center)
-                .lineLimit(2)
+                .lineLimit(3)
         }
     }
 
     private var customerBlock: some View {
         VStack(spacing: 12) {
-            Text("Share your ID so an Assist AR expert can connect")
+            Text("Share your ID to receive quick remote support")
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
@@ -178,6 +204,52 @@ struct HomeView: View {
         }
     }
 
+    private var expertBlock: some View {
+        VStack(spacing: 12) {
+            Text("Enter customer ID to provide quick remote support")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                TextField("Enter the ID", text: $home.expertTargetId)
+                    .keyboardType(.numberPad)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.title3.monospaced().weight(.semibold))
+                    .foregroundStyle(.white)
+                Button {
+                    home.pasteCustomerId()
+                } label: {
+                    Image(systemName: "doc.on.clipboard")
+                        .font(.title3)
+                        .foregroundStyle(.white.opacity(0.7))
+                        .padding(10)
+                }
+            }
+            .padding(14)
+            .background(AppTheme.panel)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            Button {
+                Task { await home.joinAsExpert() }
+            } label: {
+                Label(
+                    home.isBusy ? "Joining…" : "Join the session",
+                    systemImage: "rectangle.portrait.and.arrow.right"
+                )
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(AppTheme.orange)
+                .foregroundStyle(.white)
+                .clipShape(Capsule())
+            }
+            .disabled(home.isBusy || home.activeCall != nil)
+        }
+    }
+
     private var tutorialButton: some View {
         Button {
             home.showSoloAR = true
@@ -192,6 +264,8 @@ struct HomeView: View {
                         .stroke(Color.white.opacity(0.55), lineWidth: 1.5)
                 )
         }
+        // Expert mode still allows offline tutorial for practice.
+        .opacity(home.appMode == .expert ? 0.85 : 1)
     }
 
     private var statusBar: some View {
@@ -200,10 +274,14 @@ struct HomeView: View {
                 .fill(AppTheme.statusGreen)
                 .frame(width: 8, height: 8)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Waiting for Assist AR expert (secure)")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.55))
-                    .lineLimit(1)
+                Text(
+                    home.appMode == .expert
+                        ? "Ready to connect (connection is secure)"
+                        : "Ready to connect (connection is secure)"
+                )
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.55))
+                .lineLimit(1)
                 if !home.apiReachabilityHint.isEmpty {
                     Text(home.apiReachabilityHint)
                         .font(.caption2.monospaced())
@@ -229,7 +307,7 @@ struct HomeView: View {
                 ProgressView()
                     .tint(AppTheme.orange)
                     .scaleEffect(1.3)
-                Text("Assist AR expert is joining…")
+                Text("Expert is joining…")
                     .font(.headline)
                     .foregroundStyle(.white)
                 Text("Setting up secure AR session")
@@ -244,7 +322,6 @@ struct HomeView: View {
 
     private func copyIdWithTick() {
         home.copyPublicId(profile)
-        // Suppress text toast — orange tick only.
         home.statusMessage = ""
         withAnimation {
             idJustCopied = true
@@ -271,50 +348,42 @@ struct DebugBackendSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Session API (Assist AR / Next)") {
-                    TextField("https://ggs-macmini.tail3bc01f.ts.net:8443", text: $api)
+                Section("Session API (m2m — iMac Lab Express)") {
+                    TextField("http://100.83.95.8:3000", text: $api)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                    Text("Mac Mini Funnel API: https://ggs-macmini.tail3bc01f.ts.net:8443 (Vercel backup: https://ggsexpert.vercel.app)")
+                    Text("Lab default: http://100.83.95.8:3000 (Mac Mini Funnel when online)")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
                 }
-                Section("LiveKit (media)") {
-                    TextField("wss://ggs-macmini.tail3bc01f.ts.net:7880", text: $livekit)
+                Section("LiveKit") {
+                    TextField("ws://100.83.95.8:7880", text: $livekit)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                    Text("Mac Mini Serve WSS (tailnet required for AR media). Old Homelab LiveKit retired for this cutover.")
+                    Text("Lab default: ws://100.83.95.8:7880 — phone needs Tailscale")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
                 }
                 Section {
                     Button("Save") {
                         RuntimeConfig.setAPIURL(api)
                         RuntimeConfig.setLiveKitURL(livekit)
+                        RuntimeConfig.markEpochCurrent()
                         dismiss()
                     }
                     Button("Reset to production defaults", role: .destructive) {
                         RuntimeConfig.clearOverrides()
                         RuntimeConfig.markEpochCurrent()
-                        api = AppConfig.defaultAPIURL.absoluteString
-                        livekit = AppConfig.defaultLiveKitURL
+                        api = RuntimeConfig.apiURL.absoluteString
+                        livekit = RuntimeConfig.liveKitURL
                     }
                 }
-                Section("Effective now") {
-                    Text(RuntimeConfig.apiURL.absoluteString)
-                        .font(.caption.monospaced())
-                    Text(RuntimeConfig.liveKitURL)
-                        .font(.caption.monospaced())
-                }
             }
-            .navigationTitle("Debug backend URL")
+            .navigationTitle("Debug backend")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }
                 }
             }
         }
-        .presentationDetents([.medium])
     }
 }
 

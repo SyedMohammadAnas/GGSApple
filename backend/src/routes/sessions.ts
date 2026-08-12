@@ -3,10 +3,17 @@ import { Router } from 'express';
 import { generateJoinCode, normalizeJoinCode } from '../lib/joinCode.js';
 import { createLiveKitToken } from '../lib/livekit.js';
 import { isValidPublicId, normalizePublicId } from '../lib/publicId.js';
-import { supabaseAdmin } from '../lib/supabase.js';
+import { isExpertCapableRole, supabaseAdmin } from '../lib/supabase.js';
 import { requireAuth, type AuthedRequest } from '../middleware/auth.js';
 
 const router = Router();
+
+/** Client-facing LiveKit URL (Tailscale / lab). Inside Docker, LIVEKIT_URL is the compose hostname. */
+function publicLiveKitUrl(): string {
+  const raw = (process.env.PUBLIC_LIVEKIT_URL ?? '').trim();
+  if (raw) return raw;
+  return 'ws://100.83.95.8:7880';
+}
 
 async function joinSessionAsTechnician(
   session: {
@@ -59,11 +66,19 @@ async function joinSessionAsTechnician(
     joinCode: updated.join_code,
     status: updated.status,
     token,
+    livekitUrl: publicLiveKitUrl(),
   });
 }
 
 router.post('/join-by-id', requireAuth, async (req, res) => {
   const { user, profile } = req as AuthedRequest;
+
+  // m2m: only expert/admin (and legacy technician) may start as the expert side.
+  if (!isExpertCapableRole(profile.role)) {
+    res.status(403).json({ error: 'Expert role required to join customer sessions' });
+    return;
+  }
+
   const rawId = String(req.body?.targetPublicId ?? '');
 
   if (!isValidPublicId(rawId)) {
@@ -192,6 +207,7 @@ router.post('/customer-enter', requireAuth, async (req, res) => {
     joinCode: session.join_code,
     status: session.status,
     token,
+    livekitUrl: publicLiveKitUrl(),
   });
 });
 
@@ -344,6 +360,38 @@ router.post('/:sessionId/end', requireAuth, async (req, res) => {
   }
 
   res.json({ sessionId: updated.id, status: updated.status });
+});
+
+/** Lightweight status poll used by Instant CallView / ExpertCallView. */
+router.get('/:sessionId/status', requireAuth, async (req, res) => {
+  const { user } = req as AuthedRequest;
+  const { sessionId } = req.params;
+
+  const { data: session, error } = await supabaseAdmin
+    .from('sessions')
+    .select('id, customer_id, technician_id, status')
+    .eq('id', sessionId)
+    .maybeSingle();
+
+  if (error) {
+    res.status(500).json({ error: 'Failed to look up session' });
+    return;
+  }
+
+  if (!session) {
+    res.status(404).json({ error: 'Session not found' });
+    return;
+  }
+
+  const isParticipant =
+    session.customer_id === user.id || session.technician_id === user.id;
+
+  if (!isParticipant) {
+    res.status(403).json({ error: 'Not a participant in this session' });
+    return;
+  }
+
+  res.json({ status: session.status });
 });
 
 router.get('/:sessionId', requireAuth, async (req, res) => {

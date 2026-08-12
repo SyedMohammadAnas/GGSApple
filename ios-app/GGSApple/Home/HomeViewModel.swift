@@ -7,7 +7,6 @@ import Supabase
 @MainActor
 @Observable
 final class HomeViewModel {
-    /// Instant app is customer-only; expert lives on Assist AR web.
     var statusMessage: String = ""
     var isBusy = false
     var showSoloAR = false
@@ -18,6 +17,11 @@ final class HomeViewModel {
     /// Shown in status bar so we can see which API the phone is actually hitting.
     var apiReachabilityHint: String = ""
 
+    /// Home mode — Expert toggle only for expert/admin profiles.
+    var appMode: AppMode = .customer
+    var canUseExpertMode = false
+    var expertTargetId: String = ""
+
     private var pollTask: Task<Void, Never>?
     private var accessToken: String = ""
     private var userId: UUID?
@@ -27,11 +31,45 @@ final class HomeViewModel {
         RuntimeConfig.migrateIfNeeded()
         accessToken = session.accessToken
         userId = session.user.id
+        canUseExpertMode = profile?.canActAsExpert == true
+        if canUseExpertMode {
+            appMode = RuntimeConfig.preferredAppMode
+        } else {
+            appMode = .customer
+            RuntimeConfig.preferredAppMode = .customer
+        }
         apiReachabilityHint = "API \(RuntimeConfig.apiURL.host ?? RuntimeConfig.apiURL.absoluteString)"
         print(
-            "[Home] configure customer-only user=\(session.user.id) publicId=\(profile?.publicId ?? "nil") api=\(RuntimeConfig.apiURL.absoluteString) livekit=\(RuntimeConfig.liveKitURL)"
+            "[Home] configure mode=\(appMode.rawValue) canExpert=\(canUseExpertMode) user=\(session.user.id) publicId=\(profile?.publicId ?? "nil") role=\(profile?.role ?? "nil") api=\(RuntimeConfig.apiURL.absoluteString) livekit=\(RuntimeConfig.liveKitURL)"
         )
-        startCustomerWatcherIfNeeded()
+        applyModeSideEffects()
+    }
+
+    /// Home-only mode switch (ignored while a call is active).
+    func setAppMode(_ mode: AppMode) {
+        guard activeCall == nil else {
+            print("[Home] ignore mode switch — call active")
+            return
+        }
+        guard mode == .customer || canUseExpertMode else {
+            statusMessage = "Expert mode requires an expert account"
+            appMode = .customer
+            return
+        }
+        appMode = mode
+        if canUseExpertMode {
+            RuntimeConfig.preferredAppMode = mode
+        }
+        statusMessage = ""
+        applyModeSideEffects()
+        print("[Home] appMode=\(mode.rawValue)")
+    }
+
+    private func applyModeSideEffects() {
+        stopWatchers()
+        if appMode == .customer {
+            startCustomerWatcherIfNeeded()
+        }
     }
 
     func stopWatchers() {
@@ -39,20 +77,19 @@ final class HomeViewModel {
         pollTask = nil
     }
 
-    /// Wait until Assist AR expert activates a session for this customer.
+    /// Wait until an expert activates a session for this customer.
     func startCustomerWatcherIfNeeded() {
         pollTask?.cancel()
+        guard appMode == .customer else { return }
         guard !accessToken.isEmpty, activeCall == nil else { return }
 
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
-                // Pause polling while offline Assist is open (saves network + main-thread noise).
                 if self?.showSoloAR == true {
                     try? await Task.sleep(nanoseconds: 2_500_000_000)
                     continue
                 }
                 await self?.pollForIncomingExpert()
-                // Faster poll so phone notices expert Connect within ~1–2s.
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
             }
         }
@@ -69,7 +106,7 @@ final class HomeViewModel {
     }
 
     private func pollForIncomingExpert() async {
-        guard activeCall == nil, !joiningPromptVisible else { return }
+        guard appMode == .customer, activeCall == nil, !joiningPromptVisible else { return }
 
         await refreshAccessTokenIfPossible()
         guard !accessToken.isEmpty else {
@@ -84,13 +121,11 @@ final class HomeViewModel {
                 "[Home] incoming active session \(creds.sessionId) livekit=\(creds.livekitUrl)"
             )
             joiningPromptVisible = true
-            statusMessage = "Assist AR expert is joining…"
+            statusMessage = "Expert is joining…"
             apiReachabilityHint = "Session \(creds.joinCode)"
-            // Brief prompt, then enter call.
             do {
                 try await Task.sleep(nanoseconds: 900_000_000)
             } catch {
-                // Watcher cancelled (call ended / solo AR) — do not leave join chrome stuck.
                 joiningPromptVisible = false
                 statusMessage = ""
                 apiReachabilityHint =
@@ -102,7 +137,6 @@ final class HomeViewModel {
                 joiningPromptVisible = false
                 return
             }
-            // Expert may have ended during the brief join prompt — do not enter a dead call.
             do {
                 let status = try await SessionService.shared.fetchSessionStatus(
                     sessionId: creds.sessionId,
@@ -124,7 +158,6 @@ final class HomeViewModel {
             stopWatchers()
         } catch let error as SessionAPIError where error.isWaitingForExpert {
             consecutivePollFailures = 0
-            // Expected while waiting — keep status calm.
             if statusMessage.hasPrefix("API error") || statusMessage.hasPrefix("Cannot reach") {
                 statusMessage = ""
             }
@@ -132,20 +165,56 @@ final class HomeViewModel {
             consecutivePollFailures += 1
             let detail = error.localizedDescription
             print("[Home] customer-enter FAILED #\(consecutivePollFailures): \(detail) api=\(RuntimeConfig.apiURL.absoluteString)")
-            // Surface real failures so we do not sit silent while expert is already live.
             if consecutivePollFailures >= 2 {
-                statusMessage = "Cannot reach Assist AR API — \(detail)"
+                statusMessage = "Cannot reach API — \(detail)"
                 apiReachabilityHint = "Check Debug backend URL → \(RuntimeConfig.apiURL.host ?? "?")"
             }
+        }
+    }
+
+    func joinAsExpert() async {
+        guard appMode == .expert, canUseExpertMode else { return }
+        guard activeCall == nil, !isBusy else { return }
+
+        let digits = PublicIdFormat.digitsOnly(expertTargetId)
+        guard digits.count == 11 else {
+            statusMessage = "Enter an 11-digit customer ID"
+            return
+        }
+
+        isBusy = true
+        statusMessage = "Joining…"
+        await refreshAccessTokenIfPossible()
+        defer { isBusy = false }
+
+        do {
+            let creds = try await SessionService.shared.joinById(
+                targetPublicId: digits,
+                accessToken: accessToken
+            )
+            print("[Home] expert joined session \(creds.sessionId) livekit=\(creds.livekitUrl)")
+            statusMessage = ""
+            apiReachabilityHint = "Session \(creds.joinCode)"
+            activeCall = creds
+            stopWatchers()
+        } catch {
+            statusMessage = error.localizedDescription
+            print("[Home] join-by-id FAILED: \(error.localizedDescription)")
+        }
+    }
+
+    func pasteCustomerId() {
+        if let clip = UIPasteboard.general.string, !clip.isEmpty {
+            expertTargetId = PublicIdFormat.display(PublicIdFormat.digitsOnly(clip))
+            print("[Home] pasted customer ID")
         }
     }
 
     func sharePublicId(_ profile: Profile?) {
         let id = PublicIdFormat.display(profile?.publicId)
         let text = """
-        My Instant ID: \(id)
-        Open Assist AR, sign in as expert, then Connect with this ID.
-        \(AppConfig.expertWebURL.absoluteString)
+        My AR Assist ID: \(id)
+        Open AR Assist as Expert, then Join with this ID.
         """
         let av = UIActivityViewController(activityItems: [text], applicationActivities: nil)
         guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
@@ -177,14 +246,12 @@ final class HomeViewModel {
         activeCall = nil
         joiningPromptVisible = false
         consecutivePollFailures = 0
-        // Clear stale join / session chrome so home returns to idle waiting.
         statusMessage = ""
         apiReachabilityHint = "API \(RuntimeConfig.apiURL.host ?? RuntimeConfig.apiURL.absoluteString)"
-        print("[Home] call ended — idle waiting for next Assist AR expert")
-        startCustomerWatcherIfNeeded()
+        print("[Home] call ended — back to \(appMode.rawValue) home")
+        applyModeSideEffects()
     }
 }
-
 
 private extension UIWindowScene {
     var keyWindow: UIWindow? { windows.first { $0.isKeyWindow } ?? windows.first }

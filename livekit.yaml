@@ -10,9 +10,9 @@ rtc:
 
   use_external_ip: false
 
-  # Homelab Tailscale — phones / expert browser reach Docker via Tailscale mesh.
+  # anas-imaclab Tailscale — m2m lab stack (Mac Mini offline).
 
-  node_ip: 100.70.151.71
+  node_ip: 100.83.95.8
 
 
 
@@ -20,7 +20,7 @@ turn:
 
   enabled: true
 
-  domain: 100.70.151.71
+  domain: 100.83.95.8
 
   udp_port: 3478
 

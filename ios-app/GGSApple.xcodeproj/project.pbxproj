@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		021B0A0279755D5F923397F5 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEBCC53CFF445D9095F98AA5 /* RootView.swift */; };
 		05FF97DC5CB2505C9417D33C /* CallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE22F17B21645213A63A4997 /* CallView.swift */; };
+		E9XPC4LLV1EW01M2M2M0001 /* ExpertCallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9XPC4LLV1EW01M2M2MREF1 /* ExpertCallView.swift */; };
 		0B3ED975AB405864A415B649 /* SoloARViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1330EB2F146508DA96A1695 /* SoloARViewModel.swift */; };
 		211C3A86A19D529BBFB7B581 /* OfflineAssistSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D896A509F8FE58B991D36D61 /* OfflineAssistSessionView.swift */; };
 		219FF2F86D7858638D01EC66 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 979F82CF648A55A797EFFF3C /* AuthService.swift */; };
@@ -53,6 +54,7 @@
 		DD6A2F49CF465596B3117C9C /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		EABA4A92CC7A5604BAEDD86D /* HomeViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeViewModel.swift; sourceTree = "<group>"; };
 		EE22F17B21645213A63A4997 /* CallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallView.swift; sourceTree = "<group>"; };
+		E9XPC4LLV1EW01M2M2MREF1 /* ExpertCallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpertCallView.swift; sourceTree = "<group>"; };
 		F5C9D3B20A4E6781BC23DE45 /* CallChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallChrome.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -114,6 +116,7 @@
 			isa = PBXGroup;
 			children = (
 				EE22F17B21645213A63A4997 /* CallView.swift */,
+				E9XPC4LLV1EW01M2M2MREF1 /* ExpertCallView.swift */,
 				BFC94F6614505424BF88619A /* LiveKitManager.swift */,
 			);
 			path = Call;
@@ -256,6 +259,7 @@
 				EB004D0473B25063AD0AFB8E /* AuthView.swift in Sources */,
 				D19FA313E5A756948C40BF0E /* AuthViewModel.swift in Sources */,
 				05FF97DC5CB2505C9417D33C /* CallView.swift in Sources */,
+				E9XPC4LLV1EW01M2M2M0001 /* ExpertCallView.swift in Sources */,
 				7C75B4325FCC59A19D2CC84B /* LiveKitManager.swift in Sources */,
 				24D007C8E14A53B7A6688CF7 /* AppConfig.swift in Sources */,
 				FA3D891BC4325D08B320B53B /* AppTheme.swift in Sources */,

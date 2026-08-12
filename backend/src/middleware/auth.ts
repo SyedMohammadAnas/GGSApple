@@ -43,7 +43,7 @@ export async function requireAuth(
   next();
 }
 
-export function requireRole(...roles: Array<'customer' | 'technician'>) {
+export function requireRole(...roles: Array<'customer' | 'technician' | 'expert' | 'admin'>) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const profile = (req as AuthedRequest).profile;
     if (!profile.role || !roles.includes(profile.role)) {

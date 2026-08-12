@@ -11,7 +11,8 @@ export const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
-export type UserRole = 'customer' | 'technician';
+/** DB roles used by Instant + Assist AR (lab also had technician). */
+export type UserRole = 'customer' | 'technician' | 'expert' | 'admin';
 
 export interface ProfileRow {
   id: string;
@@ -20,6 +21,12 @@ export interface ProfileRow {
   role: UserRole | null;
   avatar_url: string | null;
   public_id: string | null;
+}
+
+/** Who may join as the expert / technician side of a session. */
+export function isExpertCapableRole(role: string | null | undefined): boolean {
+  const r = (role ?? '').toLowerCase();
+  return r === 'expert' || r === 'admin' || r === 'technician';
 }
 
 export interface SessionRow {

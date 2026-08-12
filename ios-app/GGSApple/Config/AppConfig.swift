@@ -1,6 +1,6 @@
 import Foundation
 
-/// Central runtime config for Instant customer app (experts use Assist AR web).
+/// Central runtime config for Instant (Customer + Expert modes on m2m).
 enum AppConfig {
     // MARK: - Supabase (cloud demo — same as Android)
 
@@ -19,22 +19,21 @@ enum AppConfig {
     static let googleReversedClientID =
         "com.googleusercontent.apps.664161950009-jik3hu1hkgfosc83i4v3oplporpbk0br"
 
-    // MARK: - Defaults (GGS Mac Mini Funnel / Serve — bump configEpoch when URLs change)
+    // MARK: - Defaults (m2m lab — anas-imaclab; bump configEpoch when URLs change)
 
-    /// Bump this when production API/LiveKit defaults change so stale Debug overrides are cleared.
-    /// Epoch 5 = Mac Mini Funnel API `:8443` + Serve LiveKit WSS (clears Vercel/Homelab overrides).
-    static let configEpoch = 5
+    /// Epoch 6 = iMac Lab Express API + LiveKit for m2m native expert testing.
+    static let configEpoch = 6
 
-    /// Funnel public API (expert-web + Express assets) on GGS Mac Mini.
-    static let defaultAPIURL = URL(string: "https://ggs-macmini.tail3bc01f.ts.net:8443")!
-    /// LiveKit Serve on GGS Mac Mini — reliable AR media requires Tailscale on the phone.
-    static let defaultLiveKitURL = "wss://ggs-macmini.tail3bc01f.ts.net:7880"
+    /// Express API on anas-imaclab Tailscale (Mac Mini offline during m2m).
+    static let defaultAPIURL = URL(string: "http://100.83.95.8:3000")!
+    /// LiveKit on anas-imaclab — phone must be on Tailscale; Simulator can use host/Tailscale.
+    static let defaultLiveKitURL = "ws://100.83.95.8:7880"
 
     // MARK: - Product
 
-    static let appDisplayName = "Instant"
-    /// Expert browser UI via Mac Mini Funnel (root HTTPS).
-    static let expertWebURL = URL(string: "https://ggs-macmini.tail3bc01f.ts.net")!
+    static let appDisplayName = "AR Assist"
+    /// Legacy web expert URL (not required for m2m native switch).
+    static let expertWebURL = URL(string: "http://100.83.95.8:3000")!
     static let isPremium = false
 }
 
@@ -44,14 +43,14 @@ enum RuntimeConfig {
     private static let apiKey = "runtime.apiURL"
     private static let liveKitKey = "runtime.liveKitURL"
     private static let epochKey = "runtime.configEpoch"
+    private static let appModeKey = "runtime.appMode"
 
-    /// Call once at launch so phones drop stale Vercel/Homelab Debug overrides after Mac Mini cutover.
+    /// Call once at launch so phones drop stale Mac Mini / Homelab Debug overrides for m2m lab.
     static func migrateIfNeeded() {
         let stored = UserDefaults.standard.integer(forKey: epochKey)
         if stored == AppConfig.configEpoch {
             return
         }
-        // Drop old overrides that pointed at Vercel or Homelab LiveKit.
         clearOverrides()
         UserDefaults.standard.set(AppConfig.configEpoch, forKey: epochKey)
         print("[Config] migrated to epoch=\(AppConfig.configEpoch) api=\(apiURL.absoluteString) livekit=\(liveKitURL)")
@@ -88,5 +87,16 @@ enum RuntimeConfig {
 
     static func markEpochCurrent() {
         UserDefaults.standard.set(AppConfig.configEpoch, forKey: epochKey)
+    }
+
+    /// Preferred home mode for expert-capable accounts (Customer otherwise).
+    static var preferredAppMode: AppMode {
+        get {
+            let raw = UserDefaults.standard.string(forKey: appModeKey) ?? AppMode.customer.rawValue
+            return AppMode(rawValue: raw) ?? .customer
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: appModeKey)
+        }
     }
 }

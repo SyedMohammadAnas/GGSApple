@@ -160,13 +160,13 @@ final class LiveKitManager: NSObject, ObservableObject {
         }
     }
 
-    /// Tell the expert we are ending, then allow disconnect.
-    func publishSessionEnd(reason: String = "customer_ended") async {
+    /// Tell the peer we are ending, then allow disconnect.
+    func publishSessionEnd(reason: String = "customer_ended", role: String = "customer") async {
         _ = await publishAnnotationAwaiting(
             [
                 "type": "session_end",
                 "reason": reason,
-                "role": "customer",
+                "role": role,
             ],
             reliable: true
         )
