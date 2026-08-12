@@ -310,25 +310,32 @@ struct ExpertCallView: View {
     }
 
     private func normalize(_ point: CGPoint) -> (x: Double, y: Double) {
-        let w = max(stageSize.width, 1)
-        let h = max(stageSize.height, 1)
-        // Prefer full screen if geometry not ready yet.
+        // Use screen bounds as the touch area since gesture covers full screen
         let bounds = UIScreen.main.bounds
-        let width = stageSize == .zero ? bounds.width : w
-        let height = stageSize == .zero ? bounds.height : h
-        return (
-            x: min(1, max(0, Double(point.x / width))),
-            y: min(1, max(0, Double(point.y / height)))
-        )
+        let width = bounds.width
+        let height = bounds.height
+        
+        let normalizedX = min(1, max(0, Double(point.x / width)))
+        let normalizedY = min(1, max(0, Double(point.y / height)))
+        
+        print("[ExpertCall] touch at (\(point.x), \(point.y)) -> normalized (\(normalizedX), \(normalizedY)) screen: \(width)x\(height)")
+        
+        return (x: normalizedX, y: normalizedY)
     }
 
     // MARK: - Models
 
     private func fetchCatalog() async {
+        print("[ExpertCall] fetchCatalog starting - API URL: \(RuntimeConfig.apiURL?.absoluteString ?? "nil")")
         do {
             let models = try await ModelCatalogService.fetchCatalog()
+            print("[ExpertCall] received \(models.count) models from API")
             catalogItems = models.compactMap { model in
-                guard let url = model.assetURL else { return nil }
+                guard let url = model.assetURL else { 
+                    print("[ExpertCall] skipping model \(model.id) - no URL")
+                    return nil 
+                }
+                print("[ExpertCall] adding model: \(model.name)")
                 return AssetPlaceholderItem(
                     id: model.id,
                     title: model.name,
@@ -337,9 +344,14 @@ struct ExpertCallView: View {
                     thumbnailURL: model.thumbnailUrl
                 )
             }
-            print("[ExpertCall] catalog count=\(catalogItems.count)")
+            print("[ExpertCall] final catalog count=\(catalogItems.count)")
         } catch {
-            print("[ExpertCall] catalog FAILED: \(error.localizedDescription)")
+            print("[ExpertCall] catalog FAILED: \(error)")
+            // Add more detailed error info
+            if let urlError = error as? URLError {
+                print("[ExpertCall] URLError code: \(urlError.code.rawValue)")
+                print("[ExpertCall] URLError description: \(urlError.localizedDescription)")
+            }
         }
     }
 
