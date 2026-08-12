@@ -61,10 +61,12 @@ struct CallBottomDrawer: View {
     /// Full catalog — shown in expanded drawer for customer model pick.
     var catalogAssetItems: [AssetPlaceholderItem] = []
     var selectedModelId: String? = nil
+    var placedModelId: String? = nil
     var isLoadingModels: Bool = false
     var modelError: String? = nil
     var onSelectAsset: ((AssetPlaceholderItem) -> Void)? = nil
     var onPreviewAsset: ((AssetPlaceholderItem) -> Void)? = nil
+    var onRemoveModel: (() -> Void)? = nil
     @State private var dragTranslation: CGFloat = 0
     @State private var searchText = ""
     @State private var selectedCategory = AssetCategory.tempCategories[0]
@@ -149,10 +151,12 @@ struct CallBottomDrawer: View {
                         recentItems: recentAssetItems,
                         catalogItems: catalogAssetItems,
                         selectedModelId: selectedModelId,
+                        placedModelId: placedModelId,
                         isLoadingModels: isLoadingModels,
                         modelError: modelError,
                         onSelectItem: onSelectAsset,
                         onPreviewItem: onPreviewAsset,
+                        onRemoveModel: onRemoveModel,
                         onFilterTap: { showFilterSheet = true }
                     )
                 } else {
@@ -164,10 +168,12 @@ struct CallBottomDrawer: View {
                         recentItems: recentAssetItems,
                         catalogItems: catalogAssetItems,
                         selectedModelId: selectedModelId,
+                        placedModelId: placedModelId,
                         isLoadingModels: isLoadingModels,
                         modelError: modelError,
                         onSelectItem: onSelectAsset,
                         onPreviewItem: onPreviewAsset,
+                        onRemoveModel: onRemoveModel,
                         onFilterTap: { showFilterSheet = true }
                     )
                 }
@@ -295,10 +301,12 @@ struct AssetsDrawerPanel: View {
     var recentItems: [AssetPlaceholderItem] = []
     var catalogItems: [AssetPlaceholderItem] = []
     var selectedModelId: String? = nil
+    var placedModelId: String? = nil
     var isLoadingModels: Bool = false
     var modelError: String? = nil
     var onSelectItem: ((AssetPlaceholderItem) -> Void)? = nil
     var onPreviewItem: ((AssetPlaceholderItem) -> Void)? = nil
+    var onRemoveModel: (() -> Void)? = nil
     var onFilterTap: () -> Void
 
     private let columns = [
@@ -422,9 +430,13 @@ struct AssetsDrawerPanel: View {
     }
 
     private func assetTile(_ item: AssetPlaceholderItem) -> some View {
+        let isSelected = selectedModelId == item.id
+        let isPlaced = placedModelId == item.id
+        let isHighlighted = isSelected || isPlaced
+        
         VStack(spacing: 8) {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.white.opacity(selectedModelId == item.id ? 0.16 : 0.08))
+                .fill(Color.white.opacity(isHighlighted ? 0.16 : 0.08))
                 .frame(height: mode == .peek ? 72 : 96)
                 .overlay {
                     Group {
@@ -446,20 +458,26 @@ struct AssetsDrawerPanel: View {
                                 .foregroundStyle(.white.opacity(0.7))
                         }
                     }
-                        .foregroundStyle(
-                            selectedModelId == item.id ? AppTheme.orange : .white.opacity(0.4)
-                        )
+                    .foregroundStyle(
+                        isSelected ? AppTheme.orange : 
+                        isPlaced ? .green : .white.opacity(0.4)
+                    )
                 }
                 .overlay {
-                    if selectedModelId == item.id {
+                    if isSelected {
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
                             .stroke(AppTheme.orange, lineWidth: 2)
+                    } else if isPlaced {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(.green, lineWidth: 2)
                     }
                 }
 
             Text(item.title)
                 .font(.caption2)
-                .foregroundStyle(.white.opacity(0.7))
+                .foregroundStyle(
+                    isPlaced ? .green.opacity(0.9) : .white.opacity(0.7)
+                )
                 .lineLimit(1)
         }
         .contentShape(Rectangle())
@@ -467,7 +485,11 @@ struct AssetsDrawerPanel: View {
             onSelectItem?(item)
         }
         .onLongPressGesture {
-            onPreviewItem?(item)
+            if isPlaced {
+                onRemoveModel?()
+            } else {
+                onPreviewItem?(item)
+            }
         }
     }
 }
@@ -565,6 +587,7 @@ struct AnnotationToolRail: View {
     @Binding var selectedTool: AnnotationTool
     @Binding var isCollapsed: Bool
     var dimmed: Bool = false
+    var highlightModelTool: Bool = false
     var onSelect: ((AnnotationTool) -> Void)? = nil
 
     var body: some View {
@@ -597,16 +620,17 @@ struct AnnotationToolRail: View {
                 VStack(spacing: 10) {
                     ForEach(AnnotationTool.allCases) { tool in
                         let selected = selectedTool == tool
+                        let highlighted = selected || (tool == .model && highlightModelTool)
                         Button {
                             selectedTool = tool
                             onSelect?(tool)
                         } label: {
                             Image(systemName: tool.systemImage)
                                 .font(.body.weight(.semibold))
-                                .foregroundStyle(selected ? Color.white : Color.black)
+                                .foregroundStyle(highlighted ? Color.white : Color.black)
                                 .frame(width: 44, height: 44)
                                 .background {
-                                    if selected {
+                                    if highlighted {
                                         RoundedRectangle(cornerRadius: 12, style: .continuous)
                                             .fill(AppTheme.orange)
                                     }

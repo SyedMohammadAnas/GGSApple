@@ -33,6 +33,11 @@ struct ExpertCallView: View {
     @State private var isLoadingModels = true
     @State private var modelError: String?
     
+    // Model placement flow
+    @State private var armedModelForPlacement: AssetPlaceholderItem?
+    @State private var previousTool: AnnotationTool = .freehand
+    @State private var placedModelId: String?
+    
     // Screenshot capture
     @State private var screenshotImage: UIImage?
     
@@ -77,6 +82,10 @@ struct ExpertCallView: View {
 
             VStack {
                 topBar
+                if let armedModel = armedModelForPlacement {
+                    modelSelectionBadge(armedModel)
+                        .padding(.top, 8)
+                }
                 Spacer()
             }
             .padding(.horizontal, 12)
@@ -88,7 +97,8 @@ struct ExpertCallView: View {
                 AnnotationToolRail(
                     selectedTool: $selectedTool,
                     isCollapsed: $annotationCollapsed,
-                    dimmed: drawerSnap == .expanded
+                    dimmed: drawerSnap == .expanded,
+                    highlightModelTool: armedModelForPlacement != nil
                 )
                 .padding(.trailing, annotationCollapsed ? 0 : 8)
             }
@@ -100,6 +110,7 @@ struct ExpertCallView: View {
                 recentAssetItems: recentItems,
                 catalogAssetItems: catalogItems,
                 selectedModelId: selectedModelId,
+                placedModelId: placedModelId,
                 isLoadingModels: isLoadingModels,
                 modelError: modelError,
                 onSelectAsset: { item in
@@ -108,6 +119,9 @@ struct ExpertCallView: View {
                 onPreviewAsset: { item in
                     previewModel = item
                     showModelPreview = true
+                },
+                onRemoveModel: {
+                    removeePlacedModel()
                 }
             )
             .zIndex(4)
@@ -177,6 +191,38 @@ struct ExpertCallView: View {
             CallScreenshotButton {
                 captureExpertScreenshot()
             }
+        }
+    }
+    
+    private func modelSelectionBadge(_ model: AssetPlaceholderItem) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: model.systemImage)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(AppTheme.orange)
+            
+            Text(model.title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white)
+            
+            Button {
+                cancelModelPlacement()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.8))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background {
+            Capsule()
+                .fill(.ultraThinMaterial.opacity(0.8))
+                .background(Capsule().fill(Color.black.opacity(0.3)))
+        }
+        .overlay {
+            Capsule()
+                .strokeBorder(AppTheme.orange.opacity(0.3), lineWidth: 1)
         }
     }
 
@@ -288,20 +334,15 @@ struct ExpertCallView: View {
             strokeId = nil
             isDrawing = false
         case .model:
-            if modelLoaded {
+            // Check if we have an armed model ready to place
+            if armedModelForPlacement != nil {
+                placeArmedModel(at: value.location)
+            } else if placedModelId != nil {
+                // Handle adjusting existing placed model
+                let norm = normalize(value.location)
                 publish(
                     [
-                        "type": "place_model",
-                        "x": norm.x,
-                        "y": norm.y,
-                    ],
-                    reliable: true
-                )
-            } else if selectedModelURL != nil {
-                // Tap to place after load — still send place; customer may load async.
-                publish(
-                    [
-                        "type": "place_model",
+                        "type": "transform_model",
                         "x": norm.x,
                         "y": norm.y,
                     ],
@@ -399,16 +440,33 @@ struct ExpertCallView: View {
     }
 
     private func selectModel(_ item: AssetPlaceholderItem) async {
+        // Clear any existing placed model
+        if placedModelId != nil {
+            publish(["type": "remove_model"], reliable: true)
+        }
+        
+        // Remember previous tool and switch to model tool
+        if armedModelForPlacement == nil {
+            previousTool = selectedTool
+        }
+        
+        // Arm model for placement
+        armedModelForPlacement = item
         selectedModelId = item.id
         selectedModelURL = item.modelURL?.absoluteString
         modelLoaded = false
         modelScale = 1.0
         modelRotationY = 0
+        selectedTool = .model
+        
+        // Update recent items
         recentItems.removeAll { $0.id == item.id }
         recentItems.insert(item, at: 0)
         if recentItems.count > 6 {
             recentItems = Array(recentItems.prefix(6))
         }
+        
+        // Load model on customer side
         guard let url = item.modelURL?.absoluteString else { return }
         publish(
             [
@@ -418,8 +476,58 @@ struct ExpertCallView: View {
             ],
             reliable: true
         )
-        selectedTool = .model
-        print("[ExpertCall] load_model id=\(item.id)")
+        
+        print("[ExpertCall] armed model for placement: \(item.title)")
+    }
+    
+    private func cancelModelPlacement() {
+        armedModelForPlacement = nil
+        selectedTool = previousTool
+        selectedModelId = nil
+        selectedModelURL = nil
+        
+        // Cancel model loading on customer side
+        publish(["type": "cancel_model"], reliable: true)
+        
+        print("[ExpertCall] cancelled model placement")
+    }
+    
+    private func placeArmedModel(at point: CGPoint) {
+        guard let armedModel = armedModelForPlacement else { return }
+        
+        let norm = normalize(point)
+        publish(
+            [
+                "type": "place_model", 
+                "x": norm.x,
+                "y": norm.y,
+            ],
+            reliable: true
+        )
+        
+        // Model is now placed
+        placedModelId = armedModel.id
+        armedModelForPlacement = nil
+        selectedTool = previousTool
+        
+        // Update recent items to highlight placed model
+        if let index = recentItems.firstIndex(where: { $0.id == armedModel.id }) {
+            recentItems[index] = armedModel // This will trigger highlighting in UI
+        }
+        
+        print("[ExpertCall] placed model: \(armedModel.title) at (\(norm.x), \(norm.y))")
+    }
+    
+    private func removeePlacedModel() {
+        guard let placedId = placedModelId else { return }
+        
+        publish(["type": "remove_model"], reliable: true)
+        placedModelId = nil
+        
+        // Remove from recent items
+        recentItems.removeAll { $0.id == placedId }
+        
+        print("[ExpertCall] removed placed model: \(placedId)")
     }
 
     private func publishTransform() {
