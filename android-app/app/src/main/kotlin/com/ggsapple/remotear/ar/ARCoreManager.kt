@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.ImageFormat
-import android.graphics.SurfaceTexture
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -18,9 +17,9 @@ import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.TotalCaptureResult
 import android.media.ImageReader
 import android.opengl.GLSurfaceView
-import android.os.ConditionVariable
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Looper
 import android.util.Log
 import android.util.Size
 import android.view.Surface
@@ -41,8 +40,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.EnumSet
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
@@ -61,11 +58,25 @@ class ARCoreManager @Inject constructor(
 
     val frameCapturer = ARCoreFrameCapturer()
 
+    /** True while we are PixelCopying the customer GL view into LiveKit (iOS customerPOV). */
+    private val povStreaming = AtomicBoolean(false)
+    private val povHandler = Handler(Looper.getMainLooper())
+    private val povTick =
+        object : Runnable {
+            override fun run() {
+                capturePovFrame()
+                if (povStreaming.get()) {
+                    povHandler.postDelayed(this, PovCompositeEncoder.FRAME_INTERVAL_MS)
+                }
+            }
+        }
+
     private val arMode = AtomicBoolean(true)
     private val shouldUpdateSurfaceTexture = AtomicBoolean(false)
     private val arcoreActive = AtomicBoolean(false)
     private val arcoreResumeFailed = AtomicBoolean(false)
-    private val safeToExitApp = ConditionVariable()
+    private val lifecycleResumed = AtomicBoolean(false)
+    private val lifecycleGeneration = AtomicInteger(0)
 
     /**
      * Google ARCore install flow: first requestInstall(..., true) may return
@@ -165,9 +176,6 @@ class ARCoreManager @Inject constructor(
     private var surfaceCreated = false
 
     @Volatile
-    private var captureSessionChangesPossible = true
-
-    @Volatile
     private var viewportWidth = 0
 
     @Volatile
@@ -200,6 +208,7 @@ class ARCoreManager @Inject constructor(
     fun attach(activity: ComponentActivity) {
         isDestroyed = false
         this.activity = activity
+        lifecycleGeneration.incrementAndGet()
         // New call screen — allow a fresh AR attempt (singleton survives across sessions).
         arcoreResumeFailed.set(false)
         awaitingArInstall.set(false)
@@ -208,7 +217,6 @@ class ARCoreManager @Inject constructor(
         cameraOpenInFlight.set(false)
         previewCreateRetries.set(0)
         cameraOpenGeneration.incrementAndGet()
-        releaseCaptureWaitLock()
         if (displayRotationHelper == null) {
             displayRotationHelper = DisplayRotationHelper(activity)
         }
@@ -229,15 +237,22 @@ class ARCoreManager @Inject constructor(
             return
         }
 
+        val isNewSurface = this.glSurfaceView !== glSurfaceView
         this.glSurfaceView = glSurfaceView
         glSurfaceView.preserveEGLContextOnPause = true
         glSurfaceView.setEGLContextClientVersion(2)
         glSurfaceView.setEGLConfigChooser(8, 8, 8, 8, 16, 0)
-        if (!rendererBound) {
+        if (isNewSurface || !rendererBound) {
             glSurfaceView.setRenderer(glRenderer)
             rendererBound = true
         }
         glSurfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+        if (lifecycleResumed.get()) {
+            glSurfaceView.onResume()
+        }
+        if (arcoreActive.get() && !_fallbackActive.value) {
+            startPovStreaming()
+        }
     }
 
     fun getRenderer(): ArCameraRenderer? = renderer
@@ -248,14 +263,19 @@ class ARCoreManager @Inject constructor(
 
     fun shouldUpdateSurfaceTexture(): Boolean = shouldUpdateSurfaceTexture.get()
 
-    fun getCaptureSize(): Size = Size(captureWidth, captureHeight)
+    fun getCaptureSize(): Size =
+        if (_fallbackActive.value) {
+            Size(HOST_VIDEO_WIDTH, HOST_VIDEO_HEIGHT)
+        } else {
+            Size(PovCompositeEncoder.TARGET_WIDTH, PovCompositeEncoder.TARGET_HEIGHT)
+        }
 
     fun onGlSurfaceCreated(textureId: Int) {
         cameraTextureId = textureId
         surfaceCreated = true
         val hostActivity = activity ?: return
         hostActivity.runOnUiThread {
-            if (hasCameraPermission()) {
+            if (lifecycleResumed.get() && hasCameraPermission()) {
                 openCamera()
             }
         }
@@ -267,19 +287,14 @@ class ARCoreManager @Inject constructor(
         if (width > 0 && height > 0) {
             annotationController.updateViewSize(width, height)
         }
-        val session = sharedSession ?: return
-        if (width > 0 && height > 0) {
-            session.setDisplayGeometry(
-                activity?.windowManager?.defaultDisplay?.rotation ?: Surface.ROTATION_0,
-                width,
-                height,
-            )
-        }
     }
 
     fun onCameraPermissionGranted() {
         val hostActivity = activity ?: return
         hostActivity.runOnUiThread {
+            if (!lifecycleResumed.get() || isDestroyed) {
+                return@runOnUiThread
+            }
             startBackgroundThread()
             if (surfaceCreated) {
                 openCamera()
@@ -288,30 +303,37 @@ class ARCoreManager @Inject constructor(
     }
 
     fun onResume() {
+        if (isDestroyed) {
+            return
+        }
+        lifecycleResumed.set(true)
+        lifecycleGeneration.incrementAndGet()
         displayRotationHelper?.onResume()
-        releaseCaptureWaitLock()
+        glSurfaceView?.onResume()
         startBackgroundThread()
         // Returning from Play Store after AR install: clear premature failure flags and retry.
-        if (awaitingArInstall.get() || !_fallbackActive.value) {
-            if (awaitingArInstall.get()) {
-                Log.i(TAG, "onResume while awaiting AR install — retrying openCamera()")
-                arcoreResumeFailed.set(false)
-                _fallbackActive.value = false
-            }
-            startArSensorKeepAlive()
-            if (surfaceCreated) {
-                openCamera()
-            }
+        if (awaitingArInstall.get()) {
+            Log.i(TAG, "onResume while awaiting AR install — retrying openCamera()")
+            arcoreResumeFailed.set(false)
+            _fallbackActive.value = false
+        }
+        startArSensorKeepAlive()
+        if (surfaceCreated && hasCameraPermission() && !_fallbackActive.value) {
+            openCamera()
         }
     }
 
     fun onPause() {
+        lifecycleResumed.set(false)
+        lifecycleGeneration.incrementAndGet()
         shouldUpdateSurfaceTexture.set(false)
-        releaseCaptureWaitLock()
+        stopPovStreaming()
+        glSurfaceView?.onPause()
         if (arMode.get()) {
             pauseARCore()
         }
         closeCamera()
+        displayRotationHelper?.onPause()
         stopBackgroundThread()
         stopArSensorKeepAlive()
         _streamingReady.value = false
@@ -322,9 +344,16 @@ class ARCoreManager @Inject constructor(
             return
         }
         isDestroyed = true
+        lifecycleResumed.set(false)
+        lifecycleGeneration.incrementAndGet()
+        glSurfaceView?.onPause()
+        displayRotationHelper?.onPause()
+        stopPovStreaming()
         pauseARCore()
         closeCamera()
+        stopBackgroundThread()
         stopArSensorKeepAlive()
+        frameCapturer.stopCapture()
         try {
             sharedSession?.close()
         } catch (error: Exception) {
@@ -340,7 +369,6 @@ class ARCoreManager @Inject constructor(
         trackingPlaneCount = 0
         awaitingArInstall.set(false)
         userRequestedInstall = true
-        releaseCaptureWaitLock()
         _arcoreActive.value = false
         _fallbackActive.value = false
         _streamingReady.value = false
@@ -387,10 +415,15 @@ class ARCoreManager @Inject constructor(
 
     private fun openCamera() {
         val hostActivity = activity ?: return
-        if (isDestroyed || _fallbackActive.value) {
-            Log.i(TAG, "openCamera skipped — destroyed=${isDestroyed} fallback=${_fallbackActive.value}")
+        if (isDestroyed || !lifecycleResumed.get() || _fallbackActive.value) {
+            Log.i(
+                TAG,
+                "openCamera skipped — destroyed=$isDestroyed " +
+                    "resumed=${lifecycleResumed.get()} fallback=${_fallbackActive.value}",
+            )
             return
         }
+        val lifecycleToken = lifecycleGeneration.get()
         startBackgroundThread()
         if (cameraDevice != null) {
             Log.i(TAG, "openCamera skipped — cameraDevice already open")
@@ -409,7 +442,14 @@ class ARCoreManager @Inject constructor(
             ArCoreAvailability.CHECKING -> {
                 cameraOpenInFlight.set(false)
                 _trackingUiState.value = ArTrackingUiState.SCANNING
-                hostActivity.window.decorView.postDelayed({ openCamera() }, AR_CHECK_RETRY_MS)
+                hostActivity.window.decorView.postDelayed(
+                    {
+                        if (isLifecycleCurrent(lifecycleToken)) {
+                            openCamera()
+                        }
+                    },
+                    AR_CHECK_RETRY_MS,
+                )
                 return
             }
             ArCoreAvailability.INSTALLING -> {
@@ -474,12 +514,19 @@ class ARCoreManager @Inject constructor(
             val wrappedCallback =
                 sharedCamera!!.createARDeviceStateCallback(cameraDeviceCallback, backgroundHandler)
             val cameraManager = hostActivity.getSystemService(CameraManager::class.java)
-            captureSessionChangesPossible = false
+            if (ContextCompat.checkSelfPermission(
+                    hostActivity,
+                    Manifest.permission.CAMERA,
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                cameraOpenInFlight.set(false)
+                Log.w(TAG, "Camera permission was revoked before opening the camera")
+                return
+            }
             cameraManager.openCamera(cameraId!!, wrappedCallback, backgroundHandler)
         } catch (error: Exception) {
             cameraOpenInFlight.set(false)
             Log.e(TAG, "Failed to open camera", error)
-            releaseCaptureWaitLock()
             activateFallback("Open camera failed")
         }
     }
@@ -544,6 +591,7 @@ class ARCoreManager @Inject constructor(
         object : CameraDevice.StateCallback() {
             override fun onOpened(device: CameraDevice) {
                 if (isDestroyed ||
+                    !lifecycleResumed.get() ||
                     _fallbackActive.value ||
                     openingGeneration != cameraOpenGeneration.get()
                 ) {
@@ -552,7 +600,9 @@ class ARCoreManager @Inject constructor(
                         "onOpened ignored — stale/torn-down gen=$openingGeneration " +
                             "current=${cameraOpenGeneration.get()} destroyed=$isDestroyed",
                     )
-                    cameraOpenInFlight.set(false)
+                    if (openingGeneration == cameraOpenGeneration.get()) {
+                        cameraOpenInFlight.set(false)
+                    }
                     try {
                         device.close()
                     } catch (_: Exception) {
@@ -569,12 +619,20 @@ class ARCoreManager @Inject constructor(
             override fun onDisconnected(device: CameraDevice) {
                 Log.w(TAG, "CameraDevice onDisconnected")
                 cameraOpenInFlight.set(false)
-                if (cameraDevice === device) {
+                val wasCurrentDevice = cameraDevice === device
+                if (wasCurrentDevice) {
                     cameraDevice = null
                 }
                 try {
                     device.close()
                 } catch (_: Exception) {
+                }
+                if (wasCurrentDevice &&
+                    lifecycleResumed.get() &&
+                    !isDestroyed &&
+                    !_fallbackActive.value
+                ) {
+                    activateFallback("Camera device disconnected")
                 }
             }
 
@@ -592,9 +650,7 @@ class ARCoreManager @Inject constructor(
             }
 
             override fun onClosed(device: CameraDevice) {
-                // Unblocks closeCamera()'s safeToExitApp.block — without this every teardown waits 3s.
                 Log.i(TAG, "CameraDevice onClosed")
-                safeToExitApp.open()
             }
         }
 
@@ -603,6 +659,7 @@ class ARCoreManager @Inject constructor(
             override fun onConfigured(session: CameraCaptureSession) {
                 // Fallback/teardown may have already closed the device — never crash the BG thread.
                 if (isDestroyed ||
+                    !lifecycleResumed.get() ||
                     _fallbackActive.value ||
                     cameraDevice == null ||
                     openingGeneration != cameraOpenGeneration.get()
@@ -621,15 +678,11 @@ class ARCoreManager @Inject constructor(
             }
 
             override fun onActive(session: CameraCaptureSession) {
-                if (isDestroyed || _fallbackActive.value) {
+                if (isDestroyed || !lifecycleResumed.get() || _fallbackActive.value) {
                     return
                 }
                 if (arMode.get() && !arcoreActive.get() && !arcoreResumeFailed.get()) {
                     resumeARCore()
-                }
-                synchronized(this@ARCoreManager) {
-                    captureSessionChangesPossible = true
-                    (this@ARCoreManager as Object).notifyAll()
                 }
             }
 
@@ -699,7 +752,7 @@ class ARCoreManager @Inject constructor(
         sc: SharedCamera,
         device: CameraDevice,
     ) {
-        if (isDestroyed || _fallbackActive.value) {
+        if (isDestroyed || !lifecycleResumed.get() || _fallbackActive.value) {
             Log.w(TAG, "createCameraPreviewSession skipped — torn down")
             return
         }
@@ -795,13 +848,16 @@ class ARCoreManager @Inject constructor(
         }
 
         val hostActivity = activity ?: return
+        val lifecycleToken = lifecycleGeneration.get()
         hostActivity.runOnUiThread {
-            if (isDestroyed || _fallbackActive.value) {
+            if (isDestroyed || !lifecycleResumed.get() || _fallbackActive.value) {
                 return@runOnUiThread
             }
             hostActivity.window.decorView.postDelayed(
                 {
-                    if (!isDestroyed && !_fallbackActive.value && cameraDevice == null) {
+                    if (isLifecycleCurrent(lifecycleToken) &&
+                        cameraDevice == null
+                    ) {
                         openCamera()
                     }
                 },
@@ -860,7 +916,11 @@ class ARCoreManager @Inject constructor(
 
     private fun setRepeatingCaptureRequest() {
         try {
-            if (isDestroyed || _fallbackActive.value || cameraDevice == null) {
+            if (isDestroyed ||
+                !lifecycleResumed.get() ||
+                _fallbackActive.value ||
+                cameraDevice == null
+            ) {
                 return
             }
             val builder = previewCaptureRequestBuilder ?: return
@@ -880,32 +940,33 @@ class ARCoreManager @Inject constructor(
             return
         }
 
+        val lifecycleToken = lifecycleGeneration.get()
         runGlBeforeResume {
-            val hostActivity = activity ?: return@runGlBeforeResume
-            hostActivity.runOnUiThread {
-                try {
-                    if (viewportWidth > 0 && viewportHeight > 0) {
-                        session.setDisplayGeometry(
-                            hostActivity.windowManager.defaultDisplay.rotation,
-                            viewportWidth,
-                            viewportHeight,
-                        )
-                    }
+            activity ?: return@runGlBeforeResume
+            if (!isLifecycleCurrent(lifecycleToken) ||
+                openingGeneration != cameraOpenGeneration.get() ||
+                cameraDevice == null ||
+                captureSession == null
+            ) {
+                Log.i(TAG, "resumeARCore ignored — lifecycle or camera setup is stale")
+                return@runGlBeforeResume
+            }
 
-                    session.resume()
-                    arcoreActive.set(true)
-                    arcoreResumeFailed.set(false)
-                    awaitingArInstall.set(false)
-                    userRequestedInstall = true
-                    sharedCamera?.setCaptureCallback(cameraCaptureCallback, backgroundHandler)
-                    _arcoreActive.value = true
-                    _fallbackActive.value = false
-                    _streamingReady.value = true
-                    glSurfaceView?.requestRender()
-                    Log.i(TAG, "Shared camera active, ARCore resumed")
-                } catch (error: Exception) {
-                    handleResumeFailure(error)
-                }
+            try {
+                session.resume()
+                arcoreActive.set(true)
+                arcoreResumeFailed.set(false)
+                awaitingArInstall.set(false)
+                userRequestedInstall = true
+                sharedCamera?.setCaptureCallback(cameraCaptureCallback, backgroundHandler)
+                _arcoreActive.value = true
+                _fallbackActive.value = false
+                _streamingReady.value = true
+                glSurfaceView?.requestRender()
+                startPovStreaming()
+                Log.i(TAG, "Shared camera active, ARCore resumed — POV composite armed")
+            } catch (error: Exception) {
+                handleResumeFailure(error)
             }
         }
     }
@@ -919,11 +980,21 @@ class ARCoreManager @Inject constructor(
     }
 
     private fun activateFallback(reason: String) {
+        val hostActivity = activity
+        if (hostActivity != null && Looper.myLooper() != Looper.getMainLooper()) {
+            hostActivity.runOnUiThread { activateFallback(reason) }
+            return
+        }
+        if (isDestroyed || !lifecycleResumed.get()) {
+            Log.i(TAG, "Fallback ignored outside resumed lifecycle: $reason")
+            return
+        }
         Log.w(TAG, reason)
+        stopPovStreaming()
+        pauseARCore()
         arcoreResumeFailed.set(true)
         arcoreActive.set(false)
         _arcoreActive.value = false
-        pauseARCore()
         closeCamera()
         try {
             sharedSession?.close()
@@ -932,20 +1003,13 @@ class ARCoreManager @Inject constructor(
         }
         sharedSession = null
         sharedCamera = null
-        releaseCaptureWaitLock()
         _fallbackActive.value = true
         _streamingReady.value = true
         _trackingUiState.value = ArTrackingUiState.STABLE
     }
 
-    private fun releaseCaptureWaitLock() {
-        synchronized(this) {
-            captureSessionChangesPossible = true
-            (this as Object).notifyAll()
-        }
-    }
-
     private fun pauseARCore() {
+        stopPovStreaming()
         if (!arcoreActive.getAndSet(false)) {
             return
         }
@@ -957,6 +1021,48 @@ class ARCoreManager @Inject constructor(
         _arcoreActive.value = false
     }
 
+    private fun startPovStreaming() {
+        if (isDestroyed || !lifecycleResumed.get() || _fallbackActive.value) {
+            return
+        }
+        if (!arcoreActive.get()) {
+            return
+        }
+        if (!povStreaming.compareAndSet(false, true)) {
+            return
+        }
+        Log.i(TAG, "customer POV stream started (GL PixelCopy @15fps → 540x960)")
+        povHandler.removeCallbacks(povTick)
+        povHandler.post(povTick)
+    }
+
+    private fun stopPovStreaming() {
+        if (!povStreaming.getAndSet(false)) {
+            povHandler.removeCallbacks(povTick)
+            return
+        }
+        povHandler.removeCallbacks(povTick)
+        Log.i(TAG, "customer POV stream stopped")
+    }
+
+    private fun capturePovFrame() {
+        if (!povStreaming.get() || !frameCapturer.isActive()) {
+            return
+        }
+        val surfaceView = glSurfaceView ?: return
+        val overlay = annotationController.overlayStrokes.value
+        val draft = annotationController.draftStroke.value
+        val pointer = annotationController.pointerOverlay.value
+        PovCompositeEncoder.capture(
+            surfaceView = surfaceView,
+            strokes = overlay,
+            draftStroke = draft,
+            pointerOverlay = pointer,
+        ) { frame ->
+            frameCapturer.pushVideoFrame(frame)
+        }
+    }
+
     private fun onImageAvailable(reader: ImageReader) {
         val image = reader.acquireLatestImage() ?: return
         try {
@@ -964,7 +1070,7 @@ class ARCoreManager @Inject constructor(
             val rotation = cameraId?.let { displayRotationHelper?.getCameraSensorToDisplayRotation(it) } ?: 90
             frameCapturer.updateRotation(rotation)
             tutorialFrameSink?.invoke(image, rotation)
-            frameCapturer.pushImage(image)
+            // LiveKit receives the GL POV composite, not this raw sensor image.
         } finally {
             image.close()
         }
@@ -975,23 +1081,29 @@ class ARCoreManager @Inject constructor(
         cameraOpenGeneration.incrementAndGet()
         cameraOpenInFlight.set(false)
 
-        captureSession?.close()
+        try {
+            captureSession?.close()
+        } catch (error: Exception) {
+            Log.w(TAG, "camera capture session close failed", error)
+        }
         captureSession = null
         previewCaptureRequestBuilder = null
 
-        cameraDevice?.let { device ->
-            releaseCaptureWaitLock()
-            safeToExitApp.close()
+        val device = cameraDevice
+        cameraDevice = null
+        device?.let {
             try {
-                device.close()
+                it.close()
             } catch (error: Exception) {
                 Log.w(TAG, "cameraDevice.close failed", error)
             }
-            safeToExitApp.block(3000)
-            cameraDevice = null
         }
 
-        cpuImageReader?.close()
+        try {
+            cpuImageReader?.close()
+        } catch (error: Exception) {
+            Log.w(TAG, "cpu ImageReader close failed", error)
+        }
         cpuImageReader = null
     }
 
@@ -1015,20 +1127,21 @@ class ARCoreManager @Inject constructor(
     }
 
     private fun runGlBeforeResume(onGlReady: () -> Unit) {
+        val hostActivity = activity ?: return
         val surfaceView = glSurfaceView ?: run {
-            onGlReady()
+            hostActivity.runOnUiThread(onGlReady)
             return
         }
-        val latch = CountDownLatch(1)
         surfaceView.queueEvent {
             renderer?.onBeforeResumeArcore()
-            latch.countDown()
+            hostActivity.runOnUiThread(onGlReady)
         }
-        Thread {
-            latch.await(3, TimeUnit.SECONDS)
-            onGlReady()
-        }.start()
     }
+
+    private fun isLifecycleCurrent(token: Int): Boolean =
+        !isDestroyed &&
+            lifecycleResumed.get() &&
+            lifecycleGeneration.get() == token
 
     private fun hasCameraPermission(): Boolean {
         val hostActivity = activity ?: return false

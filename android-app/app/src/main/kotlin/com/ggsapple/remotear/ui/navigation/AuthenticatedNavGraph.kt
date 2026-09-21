@@ -178,6 +178,8 @@ private fun CustomerCallRoute(
     val activeColor by viewModel.activeColor.collectAsStateWithLifecycle()
     val chatMessages by viewModel.chatMessages.collectAsStateWithLifecycle()
     val sharedFiles by viewModel.sharedFiles.collectAsStateWithLifecycle()
+    val localRoom by viewModel.roomState.collectAsStateWithLifecycle()
+    val localVideoTrack by viewModel.localVideoTrack.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     val requiredPermissions = arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
@@ -244,6 +246,8 @@ private fun CustomerCallRoute(
     CustomerCallScreen(
         uiState = uiState,
         arCoreManager = viewModel.arCoreManagerRef,
+        localRoom = localRoom,
+        localVideoTrack = localVideoTrack,
         annotationStrokes = annotationStrokes,
         draftStroke = draftStroke,
         pointerOverlay = pointerOverlay,
@@ -270,5 +274,6 @@ private fun CustomerCallRoute(
         onOpenSharedFile = openSharedFile,
         onStartRecording = viewModel::requestStartRecording,
         onStopRecording = viewModel::stopRecording,
+        onCameraFallbackReady = viewModel::onCameraFallbackReady,
     )
 }

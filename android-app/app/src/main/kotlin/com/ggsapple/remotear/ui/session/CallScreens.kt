@@ -2,6 +2,7 @@ package com.ggsapple.remotear.ui.session
 
 import android.opengl.GLSurfaceView
 import androidx.activity.ComponentActivity
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,6 +53,7 @@ import com.ggsapple.remotear.ui.call.AssistSessionTopBar
 import com.ggsapple.remotear.ui.call.CallControlBottomSheet
 import com.ggsapple.remotear.ui.call.ChatSheet
 import com.ggsapple.remotear.ui.call.FileSharingSheet
+import com.ggsapple.remotear.ui.call.LiveKitVideoView
 import com.ggsapple.remotear.ui.call.ModelDetailSheet
 import com.ggsapple.remotear.ui.call.ReconnectingBanner
 import com.ggsapple.remotear.ui.call.RemoteNetworkUnstableBadge
@@ -59,13 +61,18 @@ import com.ggsapple.remotear.ui.call.SessionOptionsSheet
 import com.ggsapple.remotear.ui.theme.Background
 import com.ggsapple.remotear.ui.theme.OnSurfaceVariant
 import io.livekit.android.room.track.video.CameraCapturerUtils
+import io.livekit.android.room.Room
+import io.livekit.android.room.track.VideoTrack
 import livekit.org.webrtc.CameraXHelper
 
 @OptIn(ExperimentalMaterial3Api::class)
+@androidx.annotation.OptIn(markerClass = [ExperimentalCamera2Interop::class])
 @Composable
 fun CustomerCallScreen(
     uiState: CallUiState,
     arCoreManager: ARCoreManager,
+    localRoom: Room?,
+    localVideoTrack: VideoTrack?,
     annotationStrokes: List<RenderedStroke>,
     draftStroke: RenderedStroke?,
     pointerOverlay: PointerOverlay,
@@ -92,6 +99,7 @@ fun CustomerCallScreen(
     onOpenSharedFile: (SharedFileNotice) -> Unit,
     onStartRecording: () -> Unit,
     onStopRecording: () -> Unit,
+    onCameraFallbackReady: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -117,15 +125,20 @@ fun CustomerCallScreen(
         }
     }
 
-    DisposableEffect(lifecycleOwner, uiState.arFallbackActive) {
-        if (uiState.arFallbackActive) {
-            val cameraProvider = CameraXHelper.createCameraProvider(lifecycleOwner)
-            if (cameraProvider.isSupported(context.applicationContext)) {
-                CameraCapturerUtils.registerCameraProvider(cameraProvider)
+    DisposableEffect(lifecycleOwner) {
+        // Register CameraX before a fallback can be requested. ARCore owns the
+        // rear camera while active; LiveKit only opens this provider in fallback.
+        val cameraProvider = CameraXHelper.createCameraProvider(lifecycleOwner)
+        val supported = cameraProvider.isSupported(context.applicationContext)
+        if (supported) {
+            CameraCapturerUtils.registerCameraProvider(cameraProvider)
+        }
+        onCameraFallbackReady(supported)
+        onDispose {
+            onCameraFallbackReady(false)
+            if (supported) {
+                CameraCapturerUtils.unregisterCameraProvider(cameraProvider)
             }
-            onDispose { CameraCapturerUtils.unregisterCameraProvider(cameraProvider) }
-        } else {
-            onDispose { }
         }
     }
 
@@ -155,16 +168,21 @@ fun CustomerCallScreen(
                 },
         )
 
+        if (uiState.arFallbackActive && localRoom != null) {
+            LiveKitVideoView(
+                room = localRoom,
+                videoTrack = localVideoTrack,
+                paused = uiState.isVideoPaused,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+
         AnnotationOverlay(
             strokes = annotationStrokes,
             draftStroke = draftStroke,
             pointerOverlay = pointerOverlay,
             modifier = Modifier.fillMaxSize(),
         )
-
-        if (uiState.arFallbackActive) {
-            Box(Modifier.fillMaxSize().background(Background.copy(alpha = 0.35f)))
-        }
 
         ArScanRingOverlay(visible = uiState.arActive && !uiState.arFallbackActive && uiState.planeCount == 0)
         // Drawing gestures ABOVE AR surface but BELOW chrome - zIndex(9) previously ate mute/end/undo taps.

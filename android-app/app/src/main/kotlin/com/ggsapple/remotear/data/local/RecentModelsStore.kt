@@ -39,7 +39,7 @@ class RecentModelsStore @Inject constructor(
             current.remove(modelId)
             current.add(0, modelId)
             while (current.size > MAX_RECENT) {
-                current.removeLast()
+                current.removeAt(current.lastIndex)
             }
             prefs[KEY_RECENT_IDS] = current.joinToString(DELIMITER)
         }

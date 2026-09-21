@@ -13,6 +13,8 @@ class DisplayRotationHelper(context: Context) : DisplayManager.DisplayListener {
     private var viewportChanged = false
     private var viewportWidth = 0
     private var viewportHeight = 0
+    private var listenerRegistered = false
+    private val sensorOrientations = mutableMapOf<String, Int>()
     private val display =
         (context.getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay
     private val displayManager =
@@ -21,11 +23,17 @@ class DisplayRotationHelper(context: Context) : DisplayManager.DisplayListener {
         context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
 
     fun onResume() {
-        displayManager.registerDisplayListener(this, null)
+        if (!listenerRegistered) {
+            displayManager.registerDisplayListener(this, null)
+            listenerRegistered = true
+        }
     }
 
     fun onPause() {
-        displayManager.unregisterDisplayListener(this)
+        if (listenerRegistered) {
+            displayManager.unregisterDisplayListener(this)
+            listenerRegistered = false
+        }
     }
 
     fun onSurfaceChanged(width: Int, height: Int) {
@@ -42,14 +50,16 @@ class DisplayRotationHelper(context: Context) : DisplayManager.DisplayListener {
     }
 
     fun getCameraSensorToDisplayRotation(cameraId: String): Int {
-        val characteristics =
-            try {
-                cameraManager.getCameraCharacteristics(cameraId)
-            } catch (error: CameraAccessException) {
-                throw IllegalStateException("Unable to determine display orientation", error)
+        val sensorOrientation = sensorOrientations.getOrPut(cameraId) {
+            val characteristics =
+                try {
+                    cameraManager.getCameraCharacteristics(cameraId)
+                } catch (error: CameraAccessException) {
+                    throw IllegalStateException("Unable to determine display orientation", error)
+                }
+            characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
             }
 
-        val sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
         val displayOrientation =
             when (display.rotation) {
                 Surface.ROTATION_0 -> 0

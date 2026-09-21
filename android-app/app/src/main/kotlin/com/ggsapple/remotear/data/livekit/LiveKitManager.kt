@@ -13,8 +13,10 @@ import io.livekit.android.room.Room
 import io.livekit.android.room.participant.ConnectionQuality
 import io.livekit.android.room.participant.RemoteParticipant
 import io.livekit.android.room.track.CameraPosition
+import io.livekit.android.room.track.DataPublishReliability
 import io.livekit.android.room.track.LocalVideoTrack
 import io.livekit.android.room.track.LocalVideoTrackOptions
+import io.livekit.android.room.track.VideoCaptureParameter
 import io.livekit.android.room.track.VideoTrack
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -66,6 +68,9 @@ class LiveKitManager @Inject constructor(
 
     private val _isVideoPaused = MutableStateFlow(false)
     val isVideoPaused: StateFlow<Boolean> = _isVideoPaused.asStateFlow()
+
+    /** Expert-web / iOS share LiveKit topic `annotations`. */
+    var onAnnotationReceived: ((org.json.JSONObject) -> Unit)? = null
 
     fun connect(
         url: String,
@@ -142,11 +147,53 @@ class LiveKitManager @Inject constructor(
     }
 
     fun toggleVideoPaused() {
-        _isVideoPaused.value = !_isVideoPaused.value
+        setVideoPaused(!_isVideoPaused.value)
     }
 
     fun setVideoPaused(paused: Boolean) {
         _isVideoPaused.value = paused
+        val liveKitRoom = room ?: return
+        if (!isCustomerRole || customerVideoTrack == null) {
+            return
+        }
+        scope.launch {
+            runCatching {
+                if (customerUsesArCapturer) {
+                    if (paused) {
+                        customerArCapturer?.stopCapture()
+                    } else {
+                        customerArCapturer?.startCapture(
+                            customerCaptureWidth,
+                            customerCaptureHeight,
+                            CAPTURE_FPS,
+                        )
+                    }
+                } else {
+                    liveKitRoom.localParticipant.setCameraEnabled(!paused)
+                }
+            }.onFailure { error ->
+                Log.w(TAG, "setVideoPaused failed paused=$paused", error)
+            }
+        }
+    }
+
+    fun publishAnnotation(json: org.json.JSONObject, reliable: Boolean = true) {
+        val liveKitRoom = room ?: return
+        scope.launch {
+            runCatching {
+                liveKitRoom.localParticipant.publishData(
+                    data = json.toString().toByteArray(Charsets.UTF_8),
+                    reliability = if (reliable) {
+                        DataPublishReliability.RELIABLE
+                    } else {
+                        DataPublishReliability.LOSSY
+                    },
+                    topic = ANNOTATION_TOPIC,
+                )
+            }.onFailure { error ->
+                Log.w(TAG, "annotation publish failed", error)
+            }
+        }
     }
 
     fun disconnect() {
@@ -213,9 +260,17 @@ class LiveKitManager @Inject constructor(
             if (!useCameraFallback && arCapturer != null) {
                 customerUsesArCapturer = true
                 customerArCapturer = arCapturer
+                // Match iOS BufferCaptureOptions: portrait 540x960 @ 15fps, rotation 0.
                 liveKitRoom.localParticipant.createVideoTrack(
                     name = CUSTOMER_VIDEO_TRACK,
                     capturer = arCapturer,
+                    options = LocalVideoTrackOptions(
+                        captureParams = VideoCaptureParameter(
+                            width = captureWidth,
+                            height = captureHeight,
+                            maxFps = CAPTURE_FPS,
+                        ),
+                    ),
                 )
             } else {
                 customerUsesArCapturer = false
@@ -227,12 +282,14 @@ class LiveKitManager @Inject constructor(
 
         withContext(Dispatchers.IO) {
             track.startCapture()
-            if (customerUsesArCapturer) {
-                arCapturer?.startCapture(captureWidth, captureHeight, CAPTURE_FPS)
-            }
         }
         liveKitRoom.localParticipant.publishVideoTrack(track)
         customerVideoTrack = track
+        _localVideoTrack.value = track
+        Log.i(
+            TAG,
+            "Customer video published using ${if (customerUsesArCapturer) "POV composite ${captureWidth}x$captureHeight@$CAPTURE_FPS" else "CameraX fallback"}",
+        )
     }
 
     private suspend fun republishCustomerVideo(liveKitRoom: Room) {
@@ -314,6 +371,18 @@ class LiveKitManager @Inject constructor(
                 _connectionStatus.value = CallConnectionStatus.DISCONNECTED
             }
 
+            is RoomEvent.DataReceived -> {
+                if (event.topic != ANNOTATION_TOPIC) {
+                    return
+                }
+                val json =
+                    runCatching { org.json.JSONObject(String(event.data, Charsets.UTF_8)) }
+                        .getOrNull()
+                        ?: return
+                Log.i(TAG, "annotation RX type=${json.optString("type")}")
+                onAnnotationReceived?.invoke(json)
+            }
+
             else -> Unit
         }
     }
@@ -321,6 +390,7 @@ class LiveKitManager @Inject constructor(
     companion object {
         private const val TAG = "LiveKitManager"
         private const val CUSTOMER_VIDEO_TRACK = "customer-camera"
+        private const val ANNOTATION_TOPIC = "annotations"
         private const val CAPTURE_FPS = 15
     }
 }

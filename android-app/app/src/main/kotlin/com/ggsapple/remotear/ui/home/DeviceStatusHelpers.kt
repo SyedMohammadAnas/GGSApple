@@ -6,6 +6,7 @@ import android.content.IntentFilter
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.BatteryManager
+import android.os.Build
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -69,6 +70,7 @@ private fun readWifiBars(context: Context): Int {
     val network = cm.activeNetwork ?: return 0
     val caps = cm.getNetworkCapabilities(network) ?: return 0
     if (!caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) return 1
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return 1
     val strength = caps.signalStrength
     return when {
         strength >= -50 -> 4
