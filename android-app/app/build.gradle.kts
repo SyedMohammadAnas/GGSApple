@@ -41,7 +41,7 @@ android {
         buildConfigField(
             "String",
             "LIVEKIT_URL",
-            "\"${localProp("LIVEKIT_URL", "wss://server-laptop-anassyed.tail3bc01f.ts.net:7880")}\"",
+            "\"${localProp("LIVEKIT_URL", "wss://anassyed-homelab.tail3bc01f.ts.net:7880")}\"",
         )
         buildConfigField(
             "String",

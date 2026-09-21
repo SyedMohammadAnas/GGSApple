@@ -15,6 +15,6 @@
 
 ## Baked / default URLs (override in Debug backend URL)
 - API: `https://ggsexpert.vercel.app`
-- LiveKit: `wss://server-laptop-anassyed.tail3bc01f.ts.net:7880` (Homelab Tailscale Serve)
+- LiveKit: `wss://anassyed-homelab.tail3bc01f.ts.net:7880` (personal Homelab Tailscale Serve)
 - Auth/data: cloud Supabase
 - Requires Tailscale on phone + Homelab awake with LiveKit Docker

@@ -117,6 +117,7 @@ class CallViewModel @Inject constructor(
     val uiState: StateFlow<CallUiState> = _uiState.asStateFlow()
 
     val roomState = liveKitManager.roomState
+    val localVideoTrack = liveKitManager.localVideoTrack
     val remoteVideoTrack: StateFlow<VideoTrack?> = liveKitManager.remoteVideoTrack
     val arCoreManagerRef: ARCoreManager = arCoreManager
     val annotationStrokes = annotationController.overlayStrokes
@@ -139,6 +140,7 @@ class CallViewModel @Inject constructor(
     private var recordingTimerJob: Job? = null
     private var displayName: String = "User"
     private var userId: String = ""
+    private var cameraFallbackReady = false
 
     init {
         if (activeSession == null) {
@@ -269,6 +271,9 @@ class CallViewModel @Inject constructor(
             sessionId = sessionId,
             role = if (isCustomer) AnnotationRole.CUSTOMER else AnnotationRole.TECHNICIAN,
         )
+        liveKitManager.onAnnotationReceived = { message ->
+            annotationController.applyLiveKitWire(message)
+        }
 
         if (userId.isBlank()) {
             viewModelScope.launch {
@@ -313,6 +318,13 @@ class CallViewModel @Inject constructor(
 
     fun startLiveKitIfReady() {
         val session = sessionRepository.getCachedSession(sessionId) ?: return
+        if (isCustomer &&
+            arCoreManager.fallbackActive.value &&
+            !cameraFallbackReady
+        ) {
+            Log.i(TAG, "Waiting for CameraX provider before starting fallback video")
+            return
+        }
         if (_uiState.value.liveKitStarted) return
 
         _uiState.update { it.copy(liveKitStarted = true, errorMessage = null) }
@@ -329,6 +341,16 @@ class CallViewModel @Inject constructor(
             captureHeight = captureSize.height,
             useCameraFallback = useFallback,
         )
+    }
+
+    fun onCameraFallbackReady(ready: Boolean) {
+        cameraFallbackReady = ready
+        if (ready &&
+            isCustomer &&
+            arCoreManager.fallbackActive.value
+        ) {
+            startLiveKitIfReady()
+        }
     }
 
     fun toggleMute() {
@@ -615,6 +637,7 @@ class CallViewModel @Inject constructor(
         fileShareChannel.disconnect()
         annotationController.stop()
         audioOutputManager.reset()
+        liveKitManager.onAnnotationReceived = null
         liveKitManager.disconnect()
     }
 
@@ -622,6 +645,7 @@ class CallViewModel @Inject constructor(
         observeJob?.cancel()
         timerJob?.cancel()
         recordingTimerJob?.cancel()
+        liveKitManager.onAnnotationReceived = null
         runBlocking {
             annotationController.stop()
             chatChannel.disconnect()

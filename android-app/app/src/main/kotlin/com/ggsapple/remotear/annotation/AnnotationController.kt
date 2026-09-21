@@ -89,6 +89,7 @@ class AnnotationController @Inject constructor(
 
     private val remoteAnchorJobs = mutableMapOf<String, Job>()
     private val pendingRemoteAnchorPayloads = mutableMapOf<String, AnnotationPayload>()
+    private val liveKitDraftPoints = mutableMapOf<String, MutableList<NormalizedPoint>>()
     private var lastTechnicianStreamMs: Long = 0L
     private var lastStreamPointCount: Int = 0
     private var lastPointerStreamMs: Long = 0L
@@ -124,6 +125,147 @@ class AnnotationController @Inject constructor(
         role = null
     }
 
+    /**
+     * Expert-web / iOS LiveKit topic `annotations` — same wire as iOS applyRemoteWireEvent.
+     * Marks land in AR and the next POV snapshot bakes them into the expert video.
+     */
+    fun applyLiveKitWire(message: org.json.JSONObject) {
+        val type = message.optString("type")
+        when (type) {
+            "arrow" -> {
+                val points = liveKitPoints(message)
+                if (points.isEmpty()) {
+                    return
+                }
+                val payload =
+                    AnnotationPayload(
+                        id = message.optString("id").ifBlank { java.util.UUID.randomUUID().toString() },
+                        tool = "arrow",
+                        color = message.optString("color", DEFAULT_COLOR),
+                        points = if (points.size == 1) {
+                            val tip = points.first()
+                            listOf(NormalizedPoint(tip.x, (tip.y - 0.08f).coerceAtLeast(0f)), tip)
+                        } else {
+                            points
+                        },
+                    )
+                handleIncomingAnnotation(payload)
+            }
+            "stroke_begin" -> {
+                val id = message.optString("id").ifBlank { return }
+                liveKitDraftPoints[id] = liveKitPoints(message).toMutableList()
+                publishLiveKitDraft(
+                    id = id,
+                    tool = message.optString("tool", "freehand"),
+                    color = message.optString("color", DEFAULT_COLOR),
+                )
+            }
+            "stroke_point" -> {
+                val id = message.optString("id").ifBlank { return }
+                val extra = liveKitPoints(message)
+                val bucket = liveKitDraftPoints.getOrPut(id) { mutableListOf() }
+                bucket.addAll(extra)
+                publishLiveKitDraft(
+                    id = id,
+                    tool = message.optString("tool", "freehand"),
+                    color = message.optString("color", DEFAULT_COLOR),
+                )
+            }
+            "stroke_end" -> {
+                val id = message.optString("id").ifBlank { return }
+                val points = liveKitPoints(message).ifEmpty { liveKitDraftPoints[id].orEmpty() }
+                liveKitDraftPoints.remove(id)
+                _draftStroke.value = null
+                if (points.size < 2) {
+                    return
+                }
+                handleIncomingAnnotation(
+                    AnnotationPayload(
+                        id = id,
+                        tool = message.optString("tool", "freehand"),
+                        color = message.optString("color", DEFAULT_COLOR),
+                        points = points,
+                    ),
+                )
+            }
+            "stroke_cancel" -> {
+                liveKitDraftPoints.remove(message.optString("id"))
+                _draftStroke.value = null
+            }
+            "undo" -> {
+                val id = message.optString("id")
+                if (id.isNotBlank()) {
+                    handleClearSingle(id)
+                }
+            }
+            "clear" -> handleClear()
+            "pointer" -> {
+                handleIncomingPointer(
+                    PointerPayload(
+                        x = message.optDouble("x", 0.0).toFloat(),
+                        y = message.optDouble("y", 0.0).toFloat(),
+                        active = message.optBoolean("active", true),
+                    ),
+                )
+            }
+            "place_model", "load_model" -> {
+                val modelId = message.optString("modelId").ifBlank { return }
+                handleIncomingPlaceModel(
+                    PlaceModelPayload(
+                        modelId = modelId,
+                        modelName = message.optString("name", modelId),
+                        modelUrl = message.optString("url", message.optString("modelUrl")),
+                        x = message.optDouble("x", 0.5).toFloat(),
+                        y = message.optDouble("y", 0.5).toFloat(),
+                    ),
+                )
+            }
+            "session_end" -> Unit
+            else -> Log.i(TAG, "LiveKit wire ignored type=$type")
+        }
+    }
+
+    /** Bake in-progress expert strokes into the next POV snapshot (iOS draft path). */
+    private fun publishLiveKitDraft(id: String, tool: String, color: String) {
+        val points = liveKitDraftPoints[id].orEmpty()
+        if (points.size < 2) {
+            return
+        }
+        _draftStroke.value =
+            RenderedStroke(
+                id = id,
+                tool = AnnotationTool.fromRaw(tool),
+                color = parseComposeColor(color),
+                points = points.toOffsets(viewWidth.toFloat(), viewHeight.toFloat()),
+            )
+    }
+
+    private fun liveKitPoints(message: org.json.JSONObject): List<NormalizedPoint> {
+        val array = message.optJSONArray("points")
+        if (array != null && array.length() > 0) {
+            return buildList {
+                for (index in 0 until array.length()) {
+                    val item = array.optJSONObject(index) ?: continue
+                    add(
+                        NormalizedPoint(
+                            x = item.optDouble("x", 0.0).toFloat(),
+                            y = item.optDouble("y", 0.0).toFloat(),
+                        ),
+                    )
+                }
+            }
+        }
+        if (message.has("x") && message.has("y")) {
+            return listOf(
+                NormalizedPoint(
+                    x = message.optDouble("x").toFloat(),
+                    y = message.optDouble("y").toFloat(),
+                ),
+            )
+        }
+        return emptyList()
+    }
+
     fun updateViewSize(width: Int, height: Int) {
         val w = width.coerceAtLeast(1)
         val h = height.coerceAtLeast(1)
@@ -141,7 +283,7 @@ class AnnotationController @Inject constructor(
             return
         }
 
-        anchorManager.processPending(session, frame, viewWidth, viewHeight)
+        anchorManager.processPending(frame, viewWidth, viewHeight)
 
         val projected = anchorManager.getAnchoredStrokes().mapNotNull { stroke ->
             projector.projectStroke(stroke, frame, viewWidth, viewHeight)?.let { rendered ->
@@ -570,6 +712,7 @@ class AnnotationController @Inject constructor(
         remoteAnchorJobs.values.forEach { it.cancel() }
         remoteAnchorJobs.clear()
         pendingRemoteAnchorPayloads.clear()
+        liveKitDraftPoints.clear()
         lastTechnicianStreamMs = 0L
         lastStreamPointCount = 0
         strokeOrderStack.clear()

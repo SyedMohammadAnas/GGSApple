@@ -5,10 +5,7 @@ import android.util.Log
 import androidx.compose.ui.geometry.Offset
 import com.google.ar.core.Anchor
 import com.google.ar.core.Frame
-import com.google.ar.core.HitResult
 import com.google.ar.core.Plane
-import com.google.ar.core.Pose
-import com.google.ar.core.Session
 import com.google.ar.core.TrackingState
 import java.util.concurrent.ConcurrentLinkedQueue
 import javax.inject.Inject
@@ -16,30 +13,48 @@ import javax.inject.Singleton
 
 @Singleton
 class AnchorManager @Inject constructor() {
-    private val pendingStrokes = ConcurrentLinkedQueue<AnnotationPayload>()
+    private val pendingStrokeIds = ConcurrentLinkedQueue<String>()
     private val pendingById = mutableMapOf<String, AnnotationPayload>()
     private val anchoredStrokes = mutableListOf<AnchoredStroke>()
 
+    @Synchronized
     fun hasAnchoredStroke(id: String): Boolean =
         anchoredStrokes.any { it.id == id }
 
+    @Synchronized
     fun queueStroke(payload: AnnotationPayload) {
-        if (hasAnchoredStroke(payload.id)) {
-            return
-        }
-        pendingById[payload.id] = payload
-        pendingStrokes.add(payload)
-    }
-
-    fun processPending(session: Session, frame: Frame, viewWidth: Int, viewHeight: Int) {
-        while (true) {
-            val payload = pendingStrokes.poll() ?: break
-            anchorStroke(session, frame, payload, viewWidth, viewHeight)
+        anchoredStrokes.indexOfFirst { it.id == payload.id }
+            .takeIf { it >= 0 }
+            ?.let { index ->
+                anchoredStrokes[index].points.forEach { point -> point.anchor?.detach() }
+                anchoredStrokes.removeAt(index)
+                AnnotationPipelineLog.stage("ANCHOR", "replacing stroke=${payload.id}")
+            }
+        if (pendingById.put(payload.id, payload) == null) {
+            pendingStrokeIds.add(payload.id)
         }
     }
 
+    @Synchronized
+    fun processPending(frame: Frame, viewWidth: Int, viewHeight: Int) {
+        // Process each queued ID once per AR frame. If a plane is not ready yet,
+        // keep the newest payload queued so it can be retried on the next frame.
+        repeat(pendingStrokeIds.size) {
+            val id = pendingStrokeIds.poll() ?: return@repeat
+            val payload = pendingById.remove(id) ?: return@repeat
+            if (hasAnchoredStroke(id)) {
+                return@repeat
+            }
+            if (!anchorStroke(frame, payload, viewWidth, viewHeight)) {
+                pendingById[id] = payload
+                pendingStrokeIds.add(id)
+            }
+        }
+    }
+
+    @Synchronized
     fun clear() {
-        pendingStrokes.clear()
+        pendingStrokeIds.clear()
         pendingById.clear()
         anchoredStrokes.forEach { stroke ->
             stroke.points.forEach { point ->
@@ -49,26 +64,27 @@ class AnchorManager @Inject constructor() {
         anchoredStrokes.clear()
     }
 
+    @Synchronized
     fun removeStroke(id: String) {
         pendingById.remove(id)
-        pendingStrokes.removeIf { it.id == id }
+        pendingStrokeIds.remove(id)
         val stroke = anchoredStrokes.find { it.id == id } ?: return
         stroke.points.forEach { point -> point.anchor?.detach() }
         anchoredStrokes.removeAll { it.id == id }
         AnnotationPipelineLog.stage("ANCHOR", "removed stroke=$id")
     }
 
-    fun getAnchoredStrokes(): List<AnchoredStroke> = anchoredStrokes
+    @Synchronized
+    fun getAnchoredStrokes(): List<AnchoredStroke> = anchoredStrokes.toList()
 
     private fun anchorStroke(
-        session: Session,
         frame: Frame,
         payload: AnnotationPayload,
         viewWidth: Int,
         viewHeight: Int,
-    ) {
+    ): Boolean {
         if (payload.points.isEmpty()) {
-            return
+            return true
         }
 
         val step = maxOf(1, payload.points.size / MAX_ANCHORS_PER_STROKE)
@@ -76,13 +92,15 @@ class AnchorManager @Inject constructor() {
 
         for (index in payload.points.indices step step) {
             val point = payload.points[index]
-            val anchored = anchorPoint(session, frame, payload.id, point, viewWidth, viewHeight)
-            anchoredPoints.add(anchored)
+            anchorPoint(frame, payload.id, point, viewWidth, viewHeight)?.let { anchored ->
+                anchoredPoints.add(anchored)
+            }
         }
 
-        if (anchoredPoints.isEmpty()) {
-            Log.w(TAG, "No anchors created for stroke ${payload.id}")
-            return
+        if (anchoredPoints.size < MIN_ANCHORED_POINTS) {
+            anchoredPoints.forEach { it.anchor?.detach() }
+            Log.i(TAG, "Surface not ready for stroke ${payload.id}; retrying")
+            return false
         }
 
         anchoredStrokes.add(
@@ -97,16 +115,16 @@ class AnchorManager @Inject constructor() {
             "ANCHOR",
             "created stroke=${payload.id} anchors=${anchoredPoints.size} total=${anchoredStrokes.size}",
         )
+        return true
     }
 
     private fun anchorPoint(
-        session: Session,
         frame: Frame,
         strokeId: String,
         point: NormalizedPoint,
         viewWidth: Int,
         viewHeight: Int,
-    ): AnchoredPoint {
+    ): AnchoredPoint? {
         val xPx = point.x * viewWidth
         val yPx = point.y * viewHeight
         val hits = frame.hitTest(xPx, yPx)
@@ -140,30 +158,7 @@ class AnchorManager @Inject constructor() {
             )
         }
 
-        val fallbackPose = createFallbackPose(frame, xPx, yPx)
-        val anchor = session.createAnchor(fallbackPose)
-        Log.w(TAG, "hitTest FALLBACK stroke=$strokeId px=($xPx,$yPx) norm=(${point.x},${point.y}) depth=${FALLBACK_DEPTH_METERS}m")
-        return AnchoredPoint(
-            anchor = anchor,
-            fallbackNorm = point,
-        )
-    }
-
-    private fun createFallbackPose(
-        frame: Frame,
-        xPx: Float,
-        yPx: Float,
-    ): Pose {
-        val camera = frame.camera
-        val rayOrigin = FloatArray(3)
-        camera.pose.getTranslation(rayOrigin, 0)
-        val rayDirection = camera.pose.getZAxis()
-
-        val translation = FloatArray(3)
-        translation[0] = rayOrigin[0] + rayDirection[0] * FALLBACK_DEPTH_METERS
-        translation[1] = rayOrigin[1] + rayDirection[1] * FALLBACK_DEPTH_METERS
-        translation[2] = rayOrigin[2] + rayDirection[2] * FALLBACK_DEPTH_METERS
-        return Pose(translation, floatArrayOf(0f, 0f, 0f, 1f))
+        return null
     }
 
     data class AnchoredStroke(
@@ -181,7 +176,7 @@ class AnchorManager @Inject constructor() {
     companion object {
         private const val TAG = "AnchorManager"
         private const val MAX_ANCHORS_PER_STROKE = 30
-        private const val FALLBACK_DEPTH_METERS = 0.5f
+        private const val MIN_ANCHORED_POINTS = 2
     }
 }
 

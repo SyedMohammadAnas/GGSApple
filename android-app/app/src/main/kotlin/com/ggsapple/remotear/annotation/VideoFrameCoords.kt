@@ -24,21 +24,23 @@ fun coverContentRect(
         return ContentRect(0f, 0f, 1f, 1f)
     }
     val containerAspect = containerWidth / containerHeight
+    // The AR camera layer fills the viewport. Match that crop instead of
+    // letterboxing the 9:16 wire coordinates inside a taller phone display.
     return if (containerAspect > contentAspect) {
-        val height = containerHeight
-        val width = height * contentAspect
-        ContentRect(
-            x = (containerWidth - width) / 2f,
-            y = 0f,
-            width = width,
-            height = height,
-        )
-    } else {
         val width = containerWidth
         val height = width / contentAspect
         ContentRect(
             x = 0f,
             y = (containerHeight - height) / 2f,
+            width = width,
+            height = height,
+        )
+    } else {
+        val height = containerHeight
+        val width = height * contentAspect
+        ContentRect(
+            x = (containerWidth - width) / 2f,
+            y = 0f,
             width = width,
             height = height,
         )
