@@ -9,6 +9,7 @@ struct GGSAppleApp: App {
             RootView(authViewModel: authViewModel)
                 .preferredColorScheme(.dark)
                 .task {
+                    RuntimeConfig.migrateIfNeeded()
                     await authViewModel.bootstrap()
                 }
                 // Handle OAuth return if the system delivers the URL to the app.

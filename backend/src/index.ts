@@ -27,7 +27,8 @@ app.use('/api/models', modelsRouter);
 app.use('/api/admin', adminRouter);
 
 const publicPath = path.join(__dirname, '../public');
-// Dashboard moved to asset-dashboard/ (Vercel). Static assets remain on API.
+// Experiment: web expert viewer (join-by-id + LiveKit video + local ink).
+app.use('/expert', express.static(path.join(publicPath, 'expert')));
 
 // Health check — Phase 0 gate endpoint
 app.get('/health', (_req, res) => {
@@ -39,11 +40,20 @@ app.get('/health', (_req, res) => {
 
 // Static asset serving for Draco-compressed GLB models and thumbnails
 const assetsPath = path.join(__dirname, '../assets');
+app.use('/assets/models', (req, res, next) => {
+  console.log(`[assets] model request ${req.method} ${req.path} from ${req.ip}`);
+  next();
+});
 app.use(
   '/assets/models',
   express.static(path.join(assetsPath, 'models'), {
-    setHeaders: (res) => {
-      res.setHeader('Content-Type', 'model/gltf-binary');
+    setHeaders: (res, filePath) => {
+      const ext = path.extname(filePath).toLowerCase();
+      if (ext === '.usdz') {
+        res.setHeader('Content-Type', 'model/vnd.usdz+zip');
+      } else if (ext === '.glb') {
+        res.setHeader('Content-Type', 'model/gltf-binary');
+      }
       res.setHeader('Cache-Control', 'public, max-age=86400');
     },
   })
@@ -61,6 +71,7 @@ app.use(
 const server = app.listen(PORT, () => {
   console.log(`Remote AR API listening on port ${PORT}`);
   console.log(`Health: http://localhost:${PORT}/health`);
+  console.log(`Web expert (experiment): http://localhost:${PORT}/expert/`);
   console.log(`Assets: http://localhost:${PORT}/assets/models/`);
 });
 

@@ -1,0 +1,49 @@
+---
+description: Universal agent conduct — vault is source of truth via Obsidian MCP
+alwaysApply: true
+---
+
+# Punctualities (all projects)
+
+**Read the Obsidian vault via Obsidian MCP every session.** Vault wins if it conflicts with this file.
+
+## Session start
+
+1. `read-note` → `Punctualities/00-Read-First`
+2. `read-note` → `Punctualities/How-Agents-Act` — identify project, open its punctuality
+3. `read-note` → `Punctualities/Projects/<project>.md` (e.g. GGSApple)
+4. `search-vault` for recent Progress on your topic
+
+## How to act
+
+- **Investigate and execute** — SSH homelab, deploy, fix root causes; don't tell Anas to run steps you can run
+- **Minimize scope** — smallest correct diff
+- **Log without being asked** — session note + update Punctualities when you learn something reusable
+- **No emojis** in docs/vault; **no `npm run dev`**; **commit only when Anas asks**
+
+## Update punctualities (mandatory)
+
+If you learned a **reusable** process or trap → update vault same session:
+
+- `Punctualities/Maintaining-Punctualities.md` — when/how
+- Universal → `Punctualities/*.md`
+- Project-specific → `Punctualities/Projects/<name>.md`
+- Critical at repo open → mirror to `.cursor/rules/<project>.mdc`
+
+One-time bugs → `Lab/Pitfalls/`, not Punctualities.
+
+## Terminal (iMac Lab)
+
+- Use `/usr/bin/git` — not `/usr/local/bin/git` (2.15)
+- **No heredoc** in Shell tool — use `git commit -m "..."` or `-F /tmp/msg.txt`
+- Full rules: vault `Punctualities/Terminal-macOS`
+
+## Vault paths (Obsidian MCP)
+
+| Note | Path |
+|------|------|
+| MOC | `Punctualities/Punctualities` |
+| How to act by project | `Punctualities/How-Agents-Act` |
+| Maintain rules | `Punctualities/Maintaining-Punctualities` |
+| Vault logging | `Punctualities/Vault-Logging` |
+| Vercel deploys | `Punctualities/Vercel-Deployments` |

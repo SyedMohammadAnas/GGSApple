@@ -12,13 +12,15 @@ struct AuthView: View {
                 Spacer()
 
                 VStack(spacing: 8) {
-                    Text("AR Assist")
+                    Text(AppConfig.appDisplayName)
                         .font(.system(size: 36, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
 
-                    Text("Remote support")
+                    Text("Get live help from an Assist AR expert")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.white.opacity(0.55))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
                 }
 
                 Spacer()

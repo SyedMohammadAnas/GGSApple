@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>AR Assist</string>
+	<string>Instant</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -18,10 +18,46 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.ggsapple.remotear.ios.auth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>remotear</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.ggsapple.remotear.ios.google</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.664161950009-jik3hu1hkgfosc83i4v3oplporpbk0br</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Instant needs the camera for AR assist sessions with Assist AR experts.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Instant connects to LiveKit over Tailscale for secure AR assist media.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Instant needs the microphone for live assist calls.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Instant saves call screenshots to your photo library.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -32,48 +68,14 @@
 		<key>UIColorName</key>
 		<string>black</string>
 	</dict>
-	<key>UISupportedInterfaceOrientations</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-	</array>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
 		<string>arm64</string>
 		<string>arkit</string>
 	</array>
-	<key>NSCameraUsageDescription</key>
-	<string>GGSApple needs the camera for AR assist sessions.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>GGSApple needs the microphone for live assist calls.</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>GGSApple connects to your Homelab API and LiveKit over the local / Tailscale network.</string>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<true/>
-	</dict>
-	<key>CFBundleURLTypes</key>
+	<key>UISupportedInterfaceOrientations</key>
 	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>com.ggsapple.remotear.ios.auth</string>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>remotear</string>
-			</array>
-		</dict>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>com.ggsapple.remotear.ios.google</string>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>com.googleusercontent.apps.664161950009-jik3hu1hkgfosc83i4v3oplporpbk0br</string>
-			</array>
-		</dict>
+		<string>UIInterfaceOrientationPortrait</string>
 	</array>
 </dict>
 </plist>
