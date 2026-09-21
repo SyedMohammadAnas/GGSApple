@@ -10,11 +10,11 @@
 
 ## Product shape
 - Instant = **customer only** (share public ID, wait for web expert)
-- Expert = **browser** (`https://ggsexpert.vercel.app`)
+- Expert = **browser** (`https://ggs-macmini.tail3bc01f.ts.net`, Vercel backup `https://ggsexpert.vercel.app`)
 - No Customer/Expert toggle on the phone
 
 ## Baked / default URLs (override in Debug backend URL)
-- API: `https://ggsexpert.vercel.app`
-- LiveKit: `wss://anassyed-homelab.tail3bc01f.ts.net:7880` (personal Homelab Tailscale Serve)
+- API: `https://ggs-macmini.tail3bc01f.ts.net:8443`
+- LiveKit: `wss://ggs-macmini.tail3bc01f.ts.net:7880` (GGS Mac Mini Tailscale Serve)
 - Auth/data: cloud Supabase
-- Requires Tailscale on phone + Homelab awake with LiveKit Docker
+- Requires Tailscale on phone + Mac Mini stack awake (Podman LiveKit)
